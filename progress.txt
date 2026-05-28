@@ -28,3 +28,12 @@
 - Logs extraction progress with frame count, duration, and elapsed time
 - Returns list of extracted frame Paths for downstream pipeline stages
 - Typecheck (mypy), lint (ruff), and 19 existing tests all pass
+
+## US-004: Local Vision Analysis — COMPLETED
+- Implemented VLM-based frame analysis using mlx_vlm (load + generate) with configurable model path
+- Accepts frames as list[Path] or directory path, resolves .jpg frames automatically
+- Batch processing with configurable batch_size (default 4), mx.eval() and gc.collect() between batches for memory stability
+- Generates timestamped JSON event log with "active", "description", "timestamp", and "frame" fields
+- Graceful fallback for non-JSON VLM output; per-frame error handling without aborting the batch
+- Saves vision_log.json to output directory for downstream pipeline stages
+- 9 new unit tests (28 total passing); typecheck (mypy) and lint (ruff) clean
