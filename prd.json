@@ -151,8 +151,8 @@
         "Typecheck and lint passes."
       ],
       "priority": 9,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Enhanced pytest config with markers. Created conftest.py with session-scoped synthetic video fixture. Added 5 extract unit tests and 6 integration/smoke tests covering full pipeline end-to-end."
     },
     {
       "id": "US-010",

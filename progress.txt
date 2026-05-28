@@ -69,3 +69,12 @@
 - Reports file size in bytes and MB, logs all metadata fields for human audit
 - Raises FileNotFoundError if output video is missing, ValueError if duration is zero or negative
 - 15 new unit tests (84 total passing); typecheck (mypy), lint (ruff), and aider review all pass
+
+## US-009: Testing Setup and Smoke Tests — COMPLETED
+- Enhanced pytest configuration in pyproject.toml with markers (slow, integration) and filterwarnings
+- Created conftest.py with session-scoped synthetic video fixture using ffmpeg testsrc+sine (10s, 320x240, 30fps, aac audio)
+- Graceful skip when ffmpeg binary not available (shutil.which fallback)
+- Created test_extract.py: 5 unit tests for frame extraction timestamps, interval alignment, directory creation, interval variation, and ffmpeg parameter verification
+- Created test_integration.py: 6 integration/smoke tests covering full pipeline (extract → generate → assemble → validate) on synthetic video
+- Integration tests verify: output video produced with non-zero size, cut_list keep ranges match assembled segments, deterministic mode with inactive frames, timestamp consistency across pipeline stages
+- 11 new tests (95 total passing); typecheck (mypy), lint (ruff), and aider review all pass
