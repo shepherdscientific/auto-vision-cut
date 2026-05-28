@@ -78,3 +78,11 @@
 - Created test_integration.py: 6 integration/smoke tests covering full pipeline (extract → generate → assemble → validate) on synthetic video
 - Integration tests verify: output video produced with non-zero size, cut_list keep ranges match assembled segments, deterministic mode with inactive frames, timestamp consistency across pipeline stages
 - 11 new tests (95 total passing); typecheck (mypy), lint (ruff), and aider review all pass
+
+## US-010: Error Recovery and Retry Logic — COMPLETED
+- Created src/autovideo/retry.py with retry_with_backoff decorator (exponential backoff, configurable max_retries and delays)
+- analyze.py: wrapped per-frame VLM generate() call with retry decorator; per-frame error handling preserves error records
+- generate.py: added _llm_generate_with_retry() with 4-attempt loop (1 initial + 3 retries); falls back to deterministic mode when retries exhausted
+- extract.py: catches ffmpeg.Error and logs stderr output; returns empty list on failure instead of aborting the pipeline
+- Created src/autovideo/resume.py with check_artifact(), get_pipeline_stage_status(), and resume_from_stage() to skip completed stages by detecting intermediate artifacts
+- 24 new unit tests (119 total passing); typecheck (mypy), lint (ruff), and aider review all pass
