@@ -92,8 +92,8 @@
         "Logic explicitly filters out 'dead time' (e.g., staring, no active prototyping)."
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented cut-list generation with LLM (Qwen3 via mlx_lm) and deterministic fallback. Loads vision_log.json, filters inactive frames, groups into keep ranges, generates voiceover script. 17 tests."
     },
     {
       "id": "US-006",
