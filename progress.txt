@@ -47,3 +47,11 @@
 - Outputs cut_list.json with "keep" timestamp ranges and "voiceover" script
 - 17 new unit tests (45 total passing); typecheck (mypy) and lint (ruff) clean
 - Aider review passed with suggested pattern added to AGENTS.md
+
+## US-006: Automated Assembly — COMPLETED
+- Implemented full assembly module in src/autovideo/assemble.py
+- Loads cut_list.json, parses "keep" timestamp ranges, slices original video with MoviePy subclipped()
+- Clamps ranges to video duration, skips invalid ranges (end <= start, negative start)
+- Concatenates subclips with concatenate_videoclips(), renders output with libx264/aac codecs
+- Cleans up temp directory (output/temp) on successful render
+- 14 new unit tests (59 total passing); typecheck (mypy), lint (ruff), and aider review all pass

@@ -108,7 +108,7 @@
         "Clean up temporary extracted frames and temporary files after a successful render."
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
