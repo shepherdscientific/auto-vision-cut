@@ -2,13 +2,14 @@
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from autovideo.generate import (
     _build_voiceover_from_descriptions,
     _events_to_segments,
     _filter_active,
     _generate_deterministic,
+    _llm_generate_with_retry,
     _load_vision_log,
     _merge_adjacent_segments,
     run,
@@ -280,3 +281,97 @@ def test_run_with_llm_non_json_output_falls_back(tmp_path: Path) -> None:
     assert "keep" in result
     assert "voiceover" in result
     assert "Coding" in result["voiceover"]
+
+
+def test_llm_retry_succeeds_on_first_attempt() -> None:
+    fake_mlx_lm = MagicMock()
+    fake_mlx_lm.generate.return_value = '{"keep": [], "voiceover": "test"}'
+
+    with patch.dict("sys.modules", {"mlx_lm": fake_mlx_lm}):
+        result = _llm_generate_with_retry(
+            model=Mock(),
+            tokenizer=Mock(),
+            prompt="test prompt",
+            max_tokens=512,
+        )
+
+    assert result == '{"keep": [], "voiceover": "test"}'
+    assert fake_mlx_lm.generate.call_count == 1
+
+
+def test_llm_retry_after_transient_failure() -> None:
+    fake_mlx_lm = MagicMock()
+    fake_mlx_lm.generate.side_effect = [
+        RuntimeError("transient error"),
+        '{"keep": [{"start": 0, "end": 10}], "voiceover": "ok"}',
+    ]
+
+    with patch.dict("sys.modules", {"mlx_lm": fake_mlx_lm}):
+        with patch("autovideo.generate.time.sleep", return_value=None):
+            result = _llm_generate_with_retry(
+                model=Mock(),
+                tokenizer=Mock(),
+                prompt="test prompt",
+                max_tokens=512,
+            )
+
+    assert result is not None
+    assert fake_mlx_lm.generate.call_count == 2
+
+
+def test_llm_retry_exhausts_and_returns_none() -> None:
+    fake_mlx_lm = MagicMock()
+    fake_mlx_lm.generate.side_effect = RuntimeError("persistent failure")
+
+    with patch.dict("sys.modules", {"mlx_lm": fake_mlx_lm}):
+        with patch("autovideo.generate.time.sleep", return_value=None):
+            result = _llm_generate_with_retry(
+                model=Mock(),
+                tokenizer=Mock(),
+                prompt="test prompt",
+                max_tokens=512,
+            )
+
+    assert result is None
+    assert fake_mlx_lm.generate.call_count == 4
+
+
+def test_llm_retry_returns_none_when_mlx_lm_not_available() -> None:
+    with patch.dict("sys.modules", {"mlx_lm": None}):
+        result = _llm_generate_with_retry(
+            model=Mock(),
+            tokenizer=Mock(),
+            prompt="test prompt",
+            max_tokens=512,
+        )
+
+    assert result is None
+
+
+def test_run_llm_falls_back_after_generate_exhausts_retries(tmp_path: Path) -> None:
+    log_path = tmp_path / "vision_log.json"
+    log_path.write_text(json.dumps([
+        {"timestamp": 0, "active": True, "description": "Coding feature"},
+    ]))
+
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    fake_model = Mock()
+    fake_tokenizer = Mock()
+    fake_mlx_lm = MagicMock()
+    fake_mlx_lm.load.return_value = (fake_model, fake_tokenizer)
+    fake_mlx_lm.generate.side_effect = RuntimeError("always fails")
+
+    with patch.dict("sys.modules", {"mlx_lm": fake_mlx_lm}):
+        with patch("autovideo.generate.time.sleep", return_value=None):
+            result = run(
+                vision_log_path=str(log_path),
+                model_path="test-model",
+                output_dir=str(output_dir),
+                use_llm=True,
+            )
+
+    assert "keep" in result
+    assert "voiceover" in result
+    assert "Coding feature" in result["voiceover"]

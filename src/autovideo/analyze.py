@@ -10,6 +10,7 @@ import mlx.core as mx
 from mlx_vlm import generate, load
 
 from autovideo.logging_setup import get_module_logger
+from autovideo.retry import retry_with_backoff
 
 logger = get_module_logger(__name__)
 
@@ -24,6 +25,29 @@ DEFAULT_VLM_PROMPT = (
 
 MAX_TOKENS = 256
 DEFAULT_BATCH_SIZE = 4
+MAX_RETRIES = 3
+RETRY_INITIAL_DELAY = 1.0
+RETRY_BACKOFF_FACTOR = 2.0
+
+
+@retry_with_backoff(
+    max_retries=MAX_RETRIES,
+    initial_delay=RETRY_INITIAL_DELAY,
+    backoff_factor=RETRY_BACKOFF_FACTOR,
+)
+def _generate_frame(
+    model: Any,
+    processor: Any,
+    prompt: str,
+    frame_path: str,
+) -> Any:
+    return generate(
+        model,
+        processor,
+        prompt,
+        image=frame_path,
+        max_tokens=MAX_TOKENS,
+    )
 
 
 def _resolve_frames(frames_input: Union[list[Path], str]) -> list[Path]:
@@ -73,12 +97,11 @@ def run(
                     + DEFAULT_VLM_PROMPT
                 )
 
-                result = generate(
-                    model,
-                    processor,
-                    prompt,
-                    image=str(frame_path),
-                    max_tokens=MAX_TOKENS,
+                result = _generate_frame(
+                    model=model,
+                    processor=processor,
+                    prompt=prompt,
+                    frame_path=str(frame_path),
                 )
 
                 raw_text = result.text.strip()

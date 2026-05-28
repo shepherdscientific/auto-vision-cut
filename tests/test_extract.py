@@ -78,6 +78,59 @@ def test_extract_uses_correct_ffmpeg_params(temp_dir: Path, synthetic_video: Pat
         mock_input.assert_called_once()
 
 
+def test_extract_handles_ffmpeg_error_gracefully(tmp_path: Path) -> None:
+    import ffmpeg as ffmpeg_mod
+
+    probe_result = {
+        "streams": [
+            {"codec_type": "video", "duration": "10.0"},
+        ],
+        "format": {"duration": "10.0"},
+    }
+    fake_error = ffmpeg_mod.Error("ffmpeg failed", b"stderr output", b"stdout output")
+
+    with mock.patch("autovideo.extract.ffmpeg.probe", return_value=probe_result), \
+         mock.patch("autovideo.extract.ffmpeg.input") as mock_input:
+        mock_chain = mock.MagicMock()
+        mock_input.return_value = mock_chain
+        mock_chain.filter.return_value.output.return_value.run.side_effect = fake_error
+
+        extracted = run(
+            video_path="/fake/video.mp4",
+            frame_interval=3,
+            output_dir=str(tmp_path),
+        )
+
+    assert extracted == []
+
+
+def test_extract_handles_generic_ffmpeg_exception(tmp_path: Path) -> None:
+    probe_result = {
+        "streams": [
+            {"codec_type": "video", "duration": "10.0"},
+        ],
+        "format": {"duration": "10.0"},
+    }
+
+    with mock.patch("autovideo.extract.ffmpeg.probe", return_value=probe_result), \
+         mock.patch("autovideo.extract.ffmpeg.input") as mock_input:
+        mock_chain = mock.MagicMock()
+        mock_input.return_value = mock_chain
+        mock_chain.filter.return_value.output.return_value.run.side_effect = OSError(
+            "ffmpeg not found"
+        )
+
+        try:
+            _ = run(
+                video_path="/fake/video.mp4",
+                frame_interval=3,
+                output_dir=str(tmp_path),
+            )
+            assert False, "Should have raised OSError for non-ffmpeg.Error"
+        except OSError:
+            pass
+
+
 @pytest.fixture
 def temp_dir(tmp_path: Path) -> Path:
     return tmp_path

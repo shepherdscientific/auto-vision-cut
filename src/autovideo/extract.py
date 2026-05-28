@@ -30,13 +30,25 @@ def run(
 
     fps = 1.0 / frame_interval
 
-    (
-        ffmpeg
-        .input(video_abs)
-        .filter("fps", fps=fps)
-        .output(str(frames_dir / "raw_%06d.jpg"), start_number=0)
-        .run(capture_stdout=True, capture_stderr=True, overwrite_output=True)
-    )
+    try:
+        (
+            ffmpeg
+            .input(video_abs)
+            .filter("fps", fps=fps)
+            .output(str(frames_dir / "raw_%06d.jpg"), start_number=0)
+            .run(capture_stdout=True, capture_stderr=True, overwrite_output=True)
+        )
+    except ffmpeg.Error as exc:
+        logger.error(
+            "ffmpeg frame extraction failed: %s — stderr: %s",
+            exc,
+            (exc.stderr.decode() if exc.stderr else ""),
+        )
+        elapsed = time.monotonic() - start_time
+        logger.info(
+            "Frame extraction aborted (frames=0, elapsed=%.1fs)", elapsed
+        )
+        return []
 
     raw_files = sorted(frames_dir.glob("raw_*.jpg"))
     extracted: list[Path] = []

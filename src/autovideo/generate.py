@@ -10,6 +10,10 @@ from autovideo.logging_setup import get_module_logger
 
 logger = get_module_logger(__name__)
 
+MAX_RETRIES = 3
+RETRY_INITIAL_DELAY = 1.0
+RETRY_BACKOFF_FACTOR = 2.0
+
 DEFAULT_LLM_PROMPT = (
     "You are a video editor analyzing a screen-recording prototyping session. "
     "Below is a JSON event log with timestamps, activity flags, and descriptions "
@@ -106,6 +110,42 @@ def _get_llm_module() -> Any:
     return sys.modules.get("mlx_lm")
 
 
+def _llm_generate_with_retry(
+    model: Any,
+    tokenizer: Any,
+    prompt: str,
+    max_tokens: int,
+) -> str | None:
+    mlx_lm = _get_llm_module()
+    if mlx_lm is None:
+        return None
+
+    delay = RETRY_INITIAL_DELAY
+    last_exception: Exception | None = None
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            return mlx_lm.generate(model, tokenizer, prompt, max_tokens=max_tokens)
+        except Exception as exc:
+            last_exception = exc
+            if attempt < MAX_RETRIES:
+                logger.warning(
+                    "LLM generate attempt %d/%d failed: %s — retrying in %.1fs",
+                    attempt + 1,
+                    MAX_RETRIES + 1,
+                    exc,
+                    delay,
+                )
+                time.sleep(delay)
+                delay *= RETRY_BACKOFF_FACTOR
+
+    logger.warning(
+        "LLM generation failed after %d attempts: %s — falling back to deterministic mode",
+        MAX_RETRIES + 1,
+        last_exception,
+    )
+    return None
+
+
 def _generate_with_llm(
     events: list[dict[str, Any]],
     model_path: str,
@@ -135,30 +175,30 @@ def _generate_with_llm(
         )
         return _generate_deterministic(events)
 
-    try:
-        events_json = json.dumps(events, indent=2)
-        prompt = DEFAULT_LLM_PROMPT + events_json
+    events_json = json.dumps(events, indent=2)
+    prompt = DEFAULT_LLM_PROMPT + events_json
+    logger.info("Sending prompt to LLM (%d events, %d chars)", len(events), len(prompt))
 
-        logger.info("Sending prompt to LLM (%d events, %d chars)", len(events), len(prompt))
-        raw_output = mlx_lm.generate(
-            model,
-            tokenizer,
-            prompt,
-            max_tokens=max_tokens,
-        )
+    raw_output = _llm_generate_with_retry(model, tokenizer, prompt, max_tokens)
+    if raw_output is None:
+        return _generate_deterministic(events)
 
-        json_start = raw_output.find("{")
-        json_end = raw_output.rfind("}")
-        if json_start != -1 and json_end != -1:
+    json_start = raw_output.find("{")
+    json_end = raw_output.rfind("}")
+    if json_start != -1 and json_end != -1:
+        try:
             json_str = raw_output[json_start : json_end + 1]
             result = json.loads(json_str)
-            logger.info("LLM generated cut-list with %d keep ranges", len(result.get("keep", [])))
+            logger.info(
+                "LLM generated cut-list with %d keep ranges",
+                len(result.get("keep", [])),
+            )
             return result
-        else:
-            logger.warning("LLM output did not contain valid JSON, falling back")
+        except json.JSONDecodeError:
+            logger.warning("LLM output JSON parsing failed, falling back")
             return _generate_deterministic(events)
-    except Exception as exc:
-        logger.warning("LLM generation failed: %s — falling back to deterministic mode", exc)
+    else:
+        logger.warning("LLM output did not contain valid JSON, falling back")
         return _generate_deterministic(events)
 
 

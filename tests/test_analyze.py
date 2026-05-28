@@ -2,9 +2,9 @@
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
-from autovideo.analyze import _resolve_frames, run
+from autovideo.analyze import _generate_frame, _resolve_frames, run
 
 
 def test_resolve_frames_from_directory(tmp_path: Path) -> None:
@@ -170,3 +170,81 @@ def test_run_saves_vision_log(tmp_path: Path) -> None:
     saved = json.loads(log_path.read_text())
     assert saved[0]["active"] is False
     assert "staring" in saved[0]["description"]
+
+
+class FakeRetryModel:
+    pass
+
+
+def test_generate_frame_retries_on_failure() -> None:
+    call_count = 0
+
+    def fake_generate(model, processor, prompt, image=None, max_tokens=256):
+        nonlocal call_count
+        call_count += 1
+        if call_count <= 2:
+            raise RuntimeError("transient VLM error")
+        return type("FakeResult", (), {"text": '{"active": true, "description": "ok"}'})()
+
+    with patch("autovideo.analyze.generate", side_effect=fake_generate):
+        with patch("time.sleep", return_value=None):
+            result = _generate_frame(
+                model=FakeRetryModel(),
+                processor=Mock(),
+                prompt="test prompt",
+                frame_path="/tmp/test.jpg",
+            )
+
+    assert call_count == 3
+    assert result.text == '{"active": true, "description": "ok"}'
+
+
+def test_generate_frame_raises_after_exhausting_retries() -> None:
+    with patch("autovideo.analyze.generate", side_effect=RuntimeError("VLM OOM")):
+        with patch("time.sleep", return_value=None):
+            try:
+                _generate_frame(
+                    model=FakeRetryModel(),
+                    processor=Mock(),
+                    prompt="test prompt",
+                    frame_path="/tmp/test.jpg",
+                )
+                assert False, "Should have raised RuntimeError"
+            except RuntimeError as exc:
+                assert "VLM OOM" in str(exc)
+
+
+def test_run_handles_generate_errors_with_error_records(tmp_path: Path) -> None:
+    frame1 = tmp_path / "000003.jpg"
+    frame1.write_text("")
+    frame2 = tmp_path / "000006.jpg"
+    frame2.write_text("")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    call_count = 0
+    frame2_count = 0
+
+    def fake_generate(model, processor, prompt, image=None, max_tokens=256):
+        nonlocal call_count, frame2_count
+        call_count += 1
+        if "000003" in str(image):
+            raise RuntimeError("GPU OOM for frame 3")
+        frame2_count += 1
+        return type("FakeResult", (), {"text": '{"active": false, "description": "idle"}'})()
+
+    with patch("autovideo.analyze.load", return_value=(Mock(), Mock())):
+        with patch("autovideo.analyze.generate", side_effect=fake_generate):
+            with patch("time.sleep", return_value=None):
+                events = run(
+                    frames=[frame1, frame2],
+                    model_path="test-model",
+                    batch_size=2,
+                    output_dir=str(output_dir),
+                )
+
+    assert len(events) == 2
+    assert events[0]["error"] == "GPU OOM for frame 3"
+    assert events[0]["active"] is True
+    assert events[1]["active"] is False
+    assert events[1]["description"] == "idle"
