@@ -37,3 +37,13 @@
 - Graceful fallback for non-JSON VLM output; per-frame error handling without aborting the batch
 - Saves vision_log.json to output directory for downstream pipeline stages
 - 9 new unit tests (28 total passing); typecheck (mypy) and lint (ruff) clean
+
+## US-005: Script and Cut-List Generation — COMPLETED
+- Implemented full cut-list generation module in src/autovideo/generate.py
+- Loads vision_log.json and filters out inactive/idle frames
+- Groups active frames into continuous segments with configurable gap threshold
+- Supports LLM-based generation (Qwen3 via mlx_lm) for enhanced voiceover and cut decisions
+- Falls back to deterministic mode when LLM is unavailable (builds voiceover from frame descriptions)
+- Outputs cut_list.json with "keep" timestamp ranges and "voiceover" script
+- 17 new unit tests (45 total passing); typecheck (mypy) and lint (ruff) clean
+- Aider review passed with suggested pattern added to AGENTS.md
