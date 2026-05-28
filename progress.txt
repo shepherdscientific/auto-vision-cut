@@ -13,3 +13,10 @@
 - Supports loading config from YAML and JSON files via from_yaml(), from_json(), from_file()
 - CLI overrides via argparse (--video, --config, --output-dir, --frame-interval)
 - 13 unit tests passing; typecheck (mypy) and lint (ruff) pass with no errors
+
+## US-002: Logging Infrastructure — COMPLETED
+- Created src/autovideo/logging_setup.py with setup_logging() and get_module_logger() utilities
+- Supports both file and console handlers with configurable log level
+- Log format includes timestamps, module name, log level, and message
+- Created pipeline module stubs (extract, analyze, generate, assemble) with lifecycle logging (start/completion)
+- 6 new unit tests (19 total passing); typecheck (mypy) and lint (ruff) pass with no errors
