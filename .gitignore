@@ -1,0 +1,5 @@
+.env*
+scripts/**
+!scripts/*
+prd.json
+opencode.json
