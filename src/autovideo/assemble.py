@@ -5,7 +5,12 @@ import shutil
 import time
 from pathlib import Path
 
-from moviepy import VideoFileClip, concatenate_videoclips
+from moviepy import (
+    AudioFileClip,
+    CompositeAudioClip,
+    VideoFileClip,
+    concatenate_videoclips,
+)
 
 from autovideo.logging_setup import get_module_logger
 
@@ -27,6 +32,7 @@ def run(
     output_path: str,
     temp_dir: str = "output/temp",
     cleanup: bool = True,
+    voiceover_path: str | None = None,
 ) -> None:
     logger.info("Video assembly started (video=%s, cuts=%s)", video_path, cut_list_path)
     start_time = time.monotonic()
@@ -61,6 +67,25 @@ def run(
 
     logger.info("Concatenating %d subclips", len(subclips))
     final = concatenate_videoclips(subclips)
+
+    if voiceover_path:
+        logger.info("Processing voiceover overlay: %s", voiceover_path)
+        try:
+            vo_audio = AudioFileClip(voiceover_path)
+            if vo_audio.duration > final.duration:
+                vo_audio = vo_audio.subclipped(0, final.duration)
+            vo_audio = vo_audio.with_volume_scaled(0.7)
+
+            if final.audio is not None:
+                mixed = CompositeAudioClip([final.audio, vo_audio])
+                final = final.with_audio(mixed)
+            else:
+                final = final.with_audio(vo_audio)
+            logger.info("Voiceover overlay applied successfully")
+        except Exception as exc:
+            logger.warning(
+                "Failed to apply voiceover overlay: %s — rendering without voiceover", exc
+            )
 
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)

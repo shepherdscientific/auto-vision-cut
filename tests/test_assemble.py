@@ -273,3 +273,145 @@ class TestRun:
             mock_rmtree.assert_not_called()
 
         os.unlink(cut_list_path)
+
+    def test_run_with_voiceover_applies_overlay(self):
+        cut_list_path = self._make_cut_list_file([{"start": 0, "end": 10}])
+
+        with mock.patch("autovideo.assemble.VideoFileClip") as mock_vfc, mock.patch(
+            "autovideo.assemble.concatenate_videoclips"
+        ) as mock_concat, mock.patch(
+            "autovideo.assemble.AudioFileClip"
+        ) as mock_afc, mock.patch(
+            "autovideo.assemble.CompositeAudioClip"
+        ) as mock_cac:
+            mock_clip = mock.MagicMock()
+            mock_clip.duration = 30.0
+            mock_clip.subclipped = mock.MagicMock()
+            mock_clip.subclipped.side_effect = lambda s, e: mock.MagicMock()
+            mock_vfc.return_value = mock_clip
+
+            final_audio = mock.MagicMock()
+            mock_final = mock.MagicMock()
+            mock_final.audio = final_audio
+            mock_final.duration = 10.0
+            mock_concat.return_value = mock_final
+
+            mock_vo = mock.MagicMock()
+            mock_vo.duration = 5.0
+            mock_vo.with_volume_scaled.return_value = mock_vo
+            mock_afc.return_value = mock_vo
+
+            mock_mixed = mock.MagicMock()
+            mock_cac.return_value = mock_mixed
+
+            run(
+                "test.mp4", cut_list_path, "/tmp/output.mp4",
+                cleanup=False, voiceover_path="voiceover.aac",
+            )
+
+            mock_afc.assert_called_once_with("voiceover.aac")
+            mock_vo.with_volume_scaled.assert_called_once_with(0.7)
+            mock_cac.assert_called_once()
+            mock_final.with_audio.assert_called_once_with(mock_mixed)
+
+        os.unlink(cut_list_path)
+
+    def test_run_with_voiceover_clips_to_video_duration(self):
+        cut_list_path = self._make_cut_list_file([{"start": 0, "end": 10}])
+
+        with mock.patch("autovideo.assemble.VideoFileClip") as mock_vfc, mock.patch(
+            "autovideo.assemble.concatenate_videoclips"
+        ) as mock_concat, mock.patch(
+            "autovideo.assemble.AudioFileClip"
+        ) as mock_afc, mock.patch(
+            "autovideo.assemble.CompositeAudioClip"
+        ):
+            mock_clip = mock.MagicMock()
+            mock_clip.duration = 30.0
+            mock_clip.subclipped = mock.MagicMock()
+            mock_clip.subclipped.side_effect = lambda s, e: mock.MagicMock()
+            mock_vfc.return_value = mock_clip
+
+            mock_final = mock.MagicMock()
+            mock_final.audio = mock.MagicMock()
+            mock_final.duration = 10.0
+            mock_concat.return_value = mock_final
+
+            mock_vo = mock.MagicMock()
+            mock_vo.duration = 60.0
+            mock_vo.with_volume_scaled.return_value = mock_vo
+            mock_afc.return_value = mock_vo
+
+            run(
+                "test.mp4", cut_list_path, "/tmp/output.mp4",
+                cleanup=False, voiceover_path="voiceover.aac",
+            )
+
+            mock_vo.subclipped.assert_called_once_with(0, 10.0)
+
+        os.unlink(cut_list_path)
+
+    def test_run_voiceover_failure_is_handled_gracefully(self):
+        cut_list_path = self._make_cut_list_file([{"start": 0, "end": 10}])
+
+        with mock.patch("autovideo.assemble.VideoFileClip") as mock_vfc, mock.patch(
+            "autovideo.assemble.concatenate_videoclips"
+        ) as mock_concat, mock.patch(
+            "autovideo.assemble.AudioFileClip"
+        ) as mock_afc:
+            mock_clip = mock.MagicMock()
+            mock_clip.duration = 30.0
+            mock_clip.subclipped = mock.MagicMock()
+            mock_clip.subclipped.side_effect = lambda s, e: mock.MagicMock()
+            mock_vfc.return_value = mock_clip
+
+            mock_final = mock.MagicMock()
+            mock_final.audio = mock.MagicMock()
+            mock_final.duration = 10.0
+            mock_concat.return_value = mock_final
+
+            mock_afc.side_effect = RuntimeError("TTS audio file missing")
+
+            run(
+                "test.mp4", cut_list_path, "/tmp/output.mp4",
+                cleanup=False, voiceover_path="missing.aac",
+            )
+
+            mock_final.write_videofile.assert_called_once()
+
+        os.unlink(cut_list_path)
+
+    def test_run_with_voiceover_handles_missing_video_audio(self):
+        cut_list_path = self._make_cut_list_file([{"start": 0, "end": 10}])
+
+        with mock.patch("autovideo.assemble.VideoFileClip") as mock_vfc, mock.patch(
+            "autovideo.assemble.concatenate_videoclips"
+        ) as mock_concat, mock.patch(
+            "autovideo.assemble.AudioFileClip"
+        ) as mock_afc, mock.patch(
+            "autovideo.assemble.CompositeAudioClip"
+        ):
+            mock_clip = mock.MagicMock()
+            mock_clip.duration = 30.0
+            mock_clip.subclipped = mock.MagicMock()
+            mock_clip.subclipped.side_effect = lambda s, e: mock.MagicMock()
+            mock_vfc.return_value = mock_clip
+
+            mock_final = mock.MagicMock()
+            mock_final.audio = None
+            mock_final.duration = 10.0
+            mock_concat.return_value = mock_final
+
+            mock_vo = mock.MagicMock()
+            mock_vo.duration = 5.0
+            mock_vo.with_volume_scaled.return_value = mock_vo
+            mock_afc.return_value = mock_vo
+
+            run(
+                "test.mp4", cut_list_path, "/tmp/output.mp4",
+                cleanup=False, voiceover_path="voiceover.aac",
+            )
+
+            mock_final.with_audio.assert_called_once_with(mock_vo)
+
+        os.unlink(cut_list_path)
