@@ -8,4 +8,8 @@
 - Typecheck (mypy) and lint (ruff) pass with no errors
 - Note: Python 3.14 on this system has a broken libexpat; used Python 3.12 with DYLD_LIBRARY_PATH pointing to Homebrew expat
 
-## US-001: Configuration Module — PENDING
+## US-001: Configuration Module — COMPLETED
+- Created src/autovideo/config.py with a dataclass holding frame_interval, model paths, input/output dirs, VLM/LLM model names, and temp dir
+- Supports loading config from YAML and JSON files via from_yaml(), from_json(), from_file()
+- CLI overrides via argparse (--video, --config, --output-dir, --frame-interval)
+- 13 unit tests passing; typecheck (mypy) and lint (ruff) pass with no errors
