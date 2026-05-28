@@ -3,3 +3,35 @@ scripts/**
 !scripts/*
 prd.json
 opencode.json
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Ralph loop artifacts
+.ralph-cost.log
+.last-branch
+archive/
+progress.txt
+
+# Pipeline outputs
+output/
+output_master.mp4
+event_log.json
+narration_script.md
+cut_list.json
+
+# Frame extraction temp data
+frames/
+temp/
+
+# OS junk
+.DS_Store
+Thumbs.db
+.aider*
