@@ -62,3 +62,10 @@
 - Graceful degradation: voiceover failures logged as warnings; video rendered without voiceover rather than aborting
 - Handles video clips with no audio track (voiceover used directly) and voiceover longer than video (clipped to duration)
 - 10 new unit tests (69 total passing); typecheck (mypy), lint (ruff), and aider review all pass
+
+## US-008: Output Validation and Verification — COMPLETED
+- Created src/autovideo/validate.py with run() that verifies output video exists, has non-zero duration, and matches cut_list.json keep ranges
+- Uses ffmpeg.probe() to extract video/audio codec info, duration, resolution, and frame rate
+- Reports file size in bytes and MB, logs all metadata fields for human audit
+- Raises FileNotFoundError if output video is missing, ValueError if duration is zero or negative
+- 15 new unit tests (84 total passing); typecheck (mypy), lint (ruff), and aider review all pass
