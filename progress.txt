@@ -1,0 +1,11 @@
+# AutoVisionCut — Implementation Progress
+
+## US-000: Project Scaffolding — COMPLETED
+- Created project directory structure: src/autovideo/, assets/, output/, tests/
+- Generated requirements.txt with ffmpeg-python, moviepy, mlx, mlx-vlm, numpy, Pillow, tqdm, pyyaml, pytest
+- Created pyproject.toml with project metadata and dev dependencies (mypy, pytest, ruff)
+- Created .venv/ virtualenv (Python 3.12) with all dependencies installed
+- Typecheck (mypy) and lint (ruff) pass with no errors
+- Note: Python 3.14 on this system has a broken libexpat; used Python 3.12 with DYLD_LIBRARY_PATH pointing to Homebrew expat
+
+## US-001: Configuration Module — PENDING

@@ -1,0 +1,172 @@
+{
+  "project": "AutoVisionCut",
+  "branchName": "ralph/auto-vision-pipeline",
+  "description": "Local Vision-to-Script-to-Cut pipeline for processing raw OBS prototyping footage.",
+  "agents": [
+    "engineering-backend-architect"
+  ],
+  "userStories": [
+    {
+      "id": "US-000",
+      "title": "Project Scaffolding",
+      "description": "As the automation loop, I need a working Python project structure so all subsequent stories can install and import dependencies.",
+      "acceptanceCriteria": [
+        "Create project directory structure: src/autovideo/ (package), assets/, output/, tests/",
+        "Generate requirements.txt with ffmpeg-python, moviepy, mlx, mlx-vlm, numpy, Pillow, tqdm, pyyaml, pytest",
+        "Create pyproject.toml with project metadata and dev dependencies (mypy, pytest, ruff)",
+        "Create a .venv/ virtualenv and verify pip install -r requirements.txt succeeds",
+        "Typecheck and lint passes."
+      ],
+      "priority": 0,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-001",
+      "title": "Configuration Module",
+      "description": "As the automation loop, I need a unified configuration system so all pipeline stages share consistent parameters.",
+      "acceptanceCriteria": [
+        "Create src/autovideo/config.py with a dataclass or Pydantic model holding: frame_interval (2–5s), model paths, input/output dirs, VLM/LLM model names, temp dir",
+        "Support loading config from YAML/JSON file with sensible defaults",
+        "Support CLI overrides via argparse (--video, --config, --output-dir)",
+        "Typecheck and lint passes."
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Logging Infrastructure",
+      "description": "As the automation loop, I need structured logging so pipeline failures are diagnosable across long-running jobs.",
+      "acceptanceCriteria": [
+        "Configure Python logging with file and console handlers in src/autovideo/logging_setup.py",
+        "Log timestamps, module name, log level, and message",
+        "Each pipeline module (extract, analyze, generate, assemble) logs its start, progress, and completion",
+        "Typecheck and lint passes."
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Frame Extraction Module",
+      "description": "As the automation loop, I need to extract frames from OBS output so the vision model can analyze them.",
+      "acceptanceCriteria": [
+        "Use ffmpeg to extract 1 frame every 2 to 5 seconds from the target video file, configurable via config module",
+        "Save extracted frames temporarily to a structured local directory (frames/<timestamp>.jpg)",
+        "Log extraction progress (frame count, elapsed time)",
+        "Typecheck and lint passes."
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Local Vision Analysis",
+      "description": "As the automation loop, I need to pass frames to a local VLM to generate a chronological event log.",
+      "agents": [
+        "engineering-backend-architect"
+      ],
+      "acceptanceCriteria": [
+        "Load local VLM (e.g., Qwen-VL or LLaVA) using MLX to optimize for unified memory.",
+        "Analyze each frame to generate a timestamped JSON log describing the physical action.",
+        "Ensure memory is cleared between batches to maintain stability within system limits."
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Script and Cut-List Generation",
+      "description": "As a creator, I want the LLM to identify narrative arcs and generate a cut-list from the vision logs.",
+      "agents": [
+        "engineering-backend-architect"
+      ],
+      "acceptanceCriteria": [
+        "Pass the vision JSON log and project reference documents to the local Qwen3 model.",
+        "Model outputs a JSON object containing 'keep' timestamp ranges and a drafted voiceover script.",
+        "Logic explicitly filters out 'dead time' (e.g., staring, no active prototyping)."
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Automated Assembly",
+      "description": "As a creator, I want the system to automatically slice the original OBS file using the generated cut-list.",
+      "agents": [
+        "engineering-backend-architect"
+      ],
+      "acceptanceCriteria": [
+        "Parse the 'keep' timestamps using MoviePy.",
+        "Concatenate the subclips into a single master output file.",
+        "Clean up temporary extracted frames and temporary files after a successful render."
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Audio Extraction and Processing",
+      "description": "As a creator, I need the pipeline to extract and preserve the audio track from OBS footage for use in the final output.",
+      "acceptanceCriteria": [
+        "Extract audio track from the source OBS video using ffmpeg",
+        "Integrate audio into the MoviePy assembly so final output has synchronized audio",
+        "Support optional voiceover overlay (from US-005 script) mixed with original audio",
+        "Typecheck and lint passes."
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Output Validation and Verification",
+      "description": "As a creator, I want automated checks that the final rendered video is complete and correct before considering the pipeline finished.",
+      "acceptanceCriteria": [
+        "Verify output_master.mp4 exists and has non-zero duration",
+        "Assert the number of concatenated segments matches the cut_list.json keep ranges",
+        "Log output file size, duration, and codec info for human audit",
+        "Typecheck and lint passes."
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Testing Setup and Smoke Tests",
+      "description": "As a developer, I need a test harness and smoke tests to catch regressions across the pipeline.",
+      "acceptanceCriteria": [
+        "Create pytest configuration in pyproject.toml (or pytest.ini)",
+        "Add a smoke test fixture: a 10-second synthetic test video generated by ffmpeg",
+        "Write an integration test that runs the full pipeline on the synthetic video and asserts output_master.mp4 is produced",
+        "Write unit tests for Config loading, frame extraction timestamps, and cut_list JSON parsing",
+        "Typecheck and lint passes."
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Error Recovery and Retry Logic",
+      "description": "As the automation loop, I need the pipeline to handle partial failures gracefully so long runs are not lost.",
+      "acceptanceCriteria": [
+        "Wrap VLM and LLM inference calls with retry logic (exponential backoff, max 3 retries)",
+        "On ffmpeg failure, log the error and skip the corrupted segment rather than aborting the entire run",
+        "Support resuming from the last successful stage by checking for existing intermediate artifacts",
+        "Typecheck and lint passes."
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
