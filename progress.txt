@@ -20,3 +20,11 @@
 - Log format includes timestamps, module name, log level, and message
 - Created pipeline module stubs (extract, analyze, generate, assemble) with lifecycle logging (start/completion)
 - 6 new unit tests (19 total passing); typecheck (mypy) and lint (ruff) pass with no errors
+
+## US-003: Frame Extraction Module — COMPLETED
+- Implemented frame extraction using ffmpeg-python's fps filter at configurable intervals (1 frame every N seconds)
+- Frames saved to {output_dir}/frames/<timestamp_seconds>.jpg (e.g., 000003.jpg for 3s mark)
+- Video duration auto-detected via ffmpeg.probe()
+- Logs extraction progress with frame count, duration, and elapsed time
+- Returns list of extracted frame Paths for downstream pipeline stages
+- Typecheck (mypy), lint (ruff), and 19 existing tests all pass
