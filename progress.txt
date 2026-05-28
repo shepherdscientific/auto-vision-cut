@@ -55,3 +55,10 @@
 - Concatenates subclips with concatenate_videoclips(), renders output with libx264/aac codecs
 - Cleans up temp directory (output/temp) on successful render
 - 14 new unit tests (59 total passing); typecheck (mypy), lint (ruff), and aider review all pass
+
+## US-007: Audio Extraction and Processing — COMPLETED
+- Created src/autovideo/audio.py with extract_audio() using ffmpeg (aac codec, no video stream) and mix_voiceover() using ffmpeg amix filter with configurable voiceover volume
+- Updated assemble.py run() with voiceover_path parameter; loads voiceover as AudioFileClip, scales volume to 70%, mixes with original audio via CompositeAudioClip
+- Graceful degradation: voiceover failures logged as warnings; video rendered without voiceover rather than aborting
+- Handles video clips with no audio track (voiceover used directly) and voiceover longer than video (clipped to duration)
+- 10 new unit tests (69 total passing); typecheck (mypy), lint (ruff), and aider review all pass
