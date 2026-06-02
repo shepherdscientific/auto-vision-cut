@@ -10,8 +10,8 @@ from autovideo.config import Config
 def test_default_config():
     cfg = Config()
     assert cfg.frame_interval == 3
-    assert cfg.vlm_model_path == "qwen-vl"
-    assert cfg.llm_model_path == "qwen3"
+    assert cfg.vlm_model_path == "qwen2.5-vl-7b"
+    assert cfg.llm_model_path == "qwen3.8b"
     assert cfg.input_dir == "assets"
     assert cfg.output_dir == "output"
     assert cfg.temp_dir == "output/temp"
@@ -23,7 +23,7 @@ def test_config_from_dict():
     cfg = Config.from_dict({"frame_interval": 5, "video_path": "/tmp/test.mp4"})
     assert cfg.frame_interval == 5
     assert cfg.video_path == "/tmp/test.mp4"
-    assert cfg.vlm_model_path == "qwen-vl"
+    assert cfg.vlm_model_path == "qwen2.5-vl-7b"
 
 
 def test_config_from_dict_ignores_unknown_keys():

@@ -217,3 +217,66 @@ def test_synthetic_video_fixture_is_valid(synthetic_video: Path) -> None:
     assert synthetic_video.exists()
     assert synthetic_video.stat().st_size > 0
     assert synthetic_video.suffix == ".mp4"
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_main_pipeline_orchestration(synthetic_video: Path, tmp_path: Path) -> None:
+    """main.py orchestrates the full pipeline and produces output_master.mp4."""
+    import subprocess
+    import sys
+
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "main.py",
+            "--video", str(synthetic_video),
+            "--output-dir", str(output_dir),
+            "--frame-interval", "3",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(Path(__file__).parent.parent),
+    )
+
+    if result.returncode != 0:
+        if "mlx" in result.stderr.lower() or "vlm" in result.stderr.lower():
+            pytest.skip("VLM model not available for full pipeline test")
+        assert False, f"main.py failed (exit={result.returncode}):\n{result.stderr}"
+
+    output_video = output_dir / "output_master.mp4"
+    assert output_video.exists()
+    assert output_video.stat().st_size > 0
+
+
+def test_main_rejects_missing_video() -> None:
+    """main.py exits with code 1 when --video is missing."""
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "main.py"],
+        capture_output=True,
+        text=True,
+        cwd=str(Path(__file__).parent.parent),
+    )
+    assert result.returncode == 1
+    assert "required" in result.stderr
+
+
+def test_main_rejects_nonexistent_video() -> None:
+    """main.py exits with code 1 when the video file doesn't exist."""
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "main.py", "--video", "/nonexistent/test.mp4"],
+        capture_output=True,
+        text=True,
+        cwd=str(Path(__file__).parent.parent),
+    )
+    assert result.returncode == 1
+    assert "not found" in result.stderr

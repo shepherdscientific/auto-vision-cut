@@ -86,3 +86,10 @@
 - extract.py: catches ffmpeg.Error and logs stderr output; returns empty list on failure instead of aborting the pipeline
 - Created src/autovideo/resume.py with check_artifact(), get_pipeline_stage_status(), and resume_from_stage() to skip completed stages by detecting intermediate artifacts
 - 24 new unit tests (119 total passing); typecheck (mypy), lint (ruff), and aider review all pass
+
+## main.py: Pipeline Orchestration Entry Point
+- Created main.py at project root with the full 5-stage pipeline: extract → analyze → generate → assemble → validate
+- Supports all existing CLI flags: --video, --config, --output-dir, --frame-interval
+- Resume support: skips completed stages when intermediate artifacts (vision_log.json, cut_list.json, output_master.mp4) exist
+- Error handling: each stage returns exit code 1 on failure with descriptive log message
+- 3 new integration tests (122 total passing); typecheck (mypy) and lint (ruff) pass

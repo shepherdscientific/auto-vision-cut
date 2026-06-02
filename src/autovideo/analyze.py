@@ -59,14 +59,39 @@ def _resolve_frames(frames_input: Union[list[Path], str]) -> list[Path]:
     return sorted(frames_input)
 
 
+def _build_frame_prompt(
+    timestamp_seconds: int,
+    context_text: str | None,
+) -> str:
+    base = (
+        f"This is a screenshot from a screen recording at "
+        f"{timestamp_seconds} seconds. "
+        + DEFAULT_VLM_PROMPT
+    )
+    if context_text:
+        base = (
+            f"This is a screenshot from a screen recording at "
+            f"{timestamp_seconds} seconds.\n\n"
+            f"PROJECT CONTEXT:\n{context_text}\n\n"
+            f"Using the context above, judge whether this frame shows "
+            f"productive work related to the project. "
+            + DEFAULT_VLM_PROMPT
+        )
+    return base
+
+
 def run(
     frames: Union[list[Path], str],
     model_path: str,
     batch_size: int = DEFAULT_BATCH_SIZE,
     output_dir: str = "output",
+    context_text: str | None = None,
 ) -> list[dict[str, Any]]:
     logger.info(
-        "Vision analysis started (model=%s, batch_size=%d)", model_path, batch_size
+        "Vision analysis started (model=%s, batch_size=%d, context=%s)",
+        model_path,
+        batch_size,
+        "yes" if context_text else "no",
     )
 
     start_time = time.monotonic()
@@ -91,11 +116,7 @@ def run(
         for frame_path in batch:
             try:
                 timestamp_seconds = int(frame_path.stem)
-                prompt = (
-                    f"This is a screenshot from a screen recording at "
-                    f"{timestamp_seconds} seconds. "
-                    + DEFAULT_VLM_PROMPT
-                )
+                prompt = _build_frame_prompt(timestamp_seconds, context_text)
 
                 result = _generate_frame(
                     model=model,

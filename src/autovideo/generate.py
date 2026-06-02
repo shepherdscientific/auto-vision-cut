@@ -146,10 +146,30 @@ def _llm_generate_with_retry(
     return None
 
 
+def _build_prompt(
+    events: list[dict[str, Any]],
+    context_text: str | None = None,
+) -> str:
+    prompt = DEFAULT_LLM_PROMPT
+    if context_text:
+        prompt = (
+            "You are a video editor analyzing a screen-recording prototyping session. "
+            "Below is a JSON event log with timestamps, activity flags, and "
+            "descriptions of what happened on screen.\n\n"
+            "CONTEXT DOCUMENTS (project specification / reference):\n"
+            f"{context_text}\n\n"
+            "Use the context documents to better judge which segments are "
+            "on-topic productive work vs irrelevant browsing or idle time.\n\n"
+            + DEFAULT_LLM_PROMPT.partition("TASK:\n")[2]
+        )
+    return prompt + json.dumps(events, indent=2)
+
+
 def _generate_with_llm(
     events: list[dict[str, Any]],
     model_path: str,
     max_tokens: int = 1024,
+    context_text: str | None = None,
 ) -> dict[str, Any]:
     mlx_lm = _get_llm_module()
     if mlx_lm is None:
@@ -175,8 +195,7 @@ def _generate_with_llm(
         )
         return _generate_deterministic(events)
 
-    events_json = json.dumps(events, indent=2)
-    prompt = DEFAULT_LLM_PROMPT + events_json
+    prompt = _build_prompt(events, context_text)
     logger.info("Sending prompt to LLM (%d events, %d chars)", len(events), len(prompt))
 
     raw_output = _llm_generate_with_retry(model, tokenizer, prompt, max_tokens)
@@ -216,12 +235,14 @@ def run(
     output_dir: str = "output",
     frame_interval: int = 3,
     use_llm: bool = False,
+    context_text: str | None = None,
 ) -> dict[str, Any]:
     logger.info(
-        "Cut-list generation started (log=%s, model=%s, llm=%s)",
+        "Cut-list generation started (log=%s, model=%s, llm=%s, context=%s)",
         vision_log_path,
         model_path,
         use_llm,
+        "yes" if context_text else "no",
     )
 
     start_time = time.monotonic()
@@ -230,7 +251,7 @@ def run(
     logger.info("Loaded %d events from vision log", len(events))
 
     if use_llm:
-        result = _generate_with_llm(events, model_path)
+        result = _generate_with_llm(events, model_path, context_text=context_text)
     else:
         result = _generate_deterministic(events)
 
