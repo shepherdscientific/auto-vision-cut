@@ -13,14 +13,13 @@ AutoVisionCut bypasses traditional timeline editing by treating video assembly a
 ```
 [Raw OBS Video] ──> (FFmpeg Frame Extraction) ──> [Image Sequences]
                                                          │
-[Project Docs]  ──> (Local VLM via MLX Analysis)  <──────┘
+[Project Docs]  ──> (Local VLM via MLX Analysis)  <─────┘
       │                  │
       v                  v
 [Qwen3 Coder] ──> [Chronological Event Log (JSON)]
       │
       v
 [Script + Keep Timestamps (JSON)] ──> (MoviePy Engine) ──> [Final Rendered Video]
-
 ```
 
 1. **Extraction:** `ffmpeg` slices raw OBS recordings down to periodic reference frames (every 2–5 seconds).
@@ -32,14 +31,12 @@ AutoVisionCut bypasses traditional timeline editing by treating video assembly a
 
 ## Hardware & Environment Requirements
 
-* **Host Machine:** Apple Silicon M4 Pro (or equivalent) with Unified Memory (64GB recommended to run VLM and LLM context side-by-side).
-* **Dependencies:**
-* Python 3.10+
-* `ffmpeg` (installed via Homebrew and exposed to system PATH)
-* `mlx` / `mlx-vlm` for accelerated local inference
-* `MoviePy` for video compilation
-
-
+- **Host Machine:** Apple Silicon M4 Pro (or equivalent) with Unified Memory (64GB recommended to run VLM and LLM context side-by-side).
+- **Dependencies:**
+  - Python 3.10+
+  - `ffmpeg` (installed via Homebrew and exposed to system PATH)
+  - `mlx` / `mlx-vlm` for accelerated local inference
+  - `MoviePy` for video compilation
 
 ---
 
@@ -50,6 +47,7 @@ AutoVisionCut bypasses traditional timeline editing by treating video assembly a
 git clone https://github.com/shepherdscientific/auto-vision-cut.git
 cd auto-vision-cut
 
+# Create and activate virtual environment
 python3 -m venv venv
 source venv/bin/activate
 
@@ -59,41 +57,114 @@ pip install -r requirements.txt
 # Ensure ffmpeg is accessible
 brew install ffmpeg
 
+# Download the local models into ~/.cache/mlx-models/
+mlx_vlm.download --model qwen2.5-vl-7b
+mlx_lm.download --model qwen3.8b
 ```
+
+The VLM model (`qwen2.5-vl-7b`) analyzes screenshots frame-by-frame. The LLM model (`qwen3.8b`) generates cut-lists and voiceover scripts. Models live under `~/.cache/mlx-models/` and are auto-resolved at runtime.
 
 ---
 
 ## Configuration & Usage
 
-The system operations are governed by a standard configuration or a target `prd.json` file compatible with the **Mr. Wiggum (Ralph)** autonomous loop structure.
+### CLI Flags
 
-### 1. Drop Your Assets
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--video` | path(s) | *required* | Video file, directory of videos, or multiple files via glob |
+| `--context` | path(s) | none | Markdown files with project specs for context-aware editing |
+| `--output-dir` | path | `output` | Directory for pipeline output |
+| `--output-mode` | `single\|separate` | `separate` | One merged output or per-video output dirs |
+| `--frame-interval` | int | `3` | Seconds between extracted frames (2–5) |
+| `--config` | path | none | YAML/JSON config file (alternative to flags) |
 
-Place your raw OBS files (e.g., `.mp4`, `.mkv`) and any project reference markdown files in the source directory:
-
-```
-/assets
-  ├── raw_footage.mp4
-  └── firmware_spec.md
-
-```
-
-### 2. Execute the Pipeline
-
-Run the master orchestration script to start frame extraction, VLM evaluation, script generation, and slicing:
+### Basic Usage
 
 ```bash
-python main.py --video ./assets/raw_footage.mp4 --context ./assets/firmware_spec.md
+# Process a single video
+python main.py --video ./assets/raw_footage.mp4
 
+# Process all videos in a directory with project context
+python main.py --video ~/Desktop/VideoChannel/wallettest/ --context ~/Desktop/VideoChannel/wallettest/README.md
+
+# Process specific files via shell glob
+python main.py --video ~/Desktop/VideoChannel/wallettest/*.mp4 --context ./specs.md
+
+# Custom frame interval and output directory
+python main.py --video ./assets/ --frame-interval 4 --output-dir ./edited
+
+# Merge all input videos into a single output
+python main.py --video ./raw/ --output-mode single
 ```
 
-### 3. Review the Artifacts
+### YAML Configuration
 
-The system spits out a localized directory containing:
+Instead of CLI flags, use a config file:
 
-* **`event_log.json`**: The VLM's chronological ledger of what happened.
-* **`narration_script.md`**: A generated voiceover script mapped perfectly to your timeline.
-* **`cut_list.json`**: The precise timestamp bounds kept for the final render.
-* **`output_master.mp4`**: Your condensed, edited video.
+```yaml
+# config.yaml
+frame_interval: 4
+vlm_model_path: qwen2.5-vl-7b
+llm_model_path: qwen3.8b
+context_paths:
+  - ./assets/project_spec.md
+output_mode: separate
+```
+
+```bash
+python main.py --video ./assets/ --config config.yaml
+```
 
 ---
+
+## Pipeline Output
+
+After a successful run, each video produces output under `output/<video_name>/` (separate mode) or `output/` (single mode):
+
+| File | Description |
+|---|---|
+| `vision_log.json` | VLM's chronological event ledger (timestamp, active flag, description per frame) |
+| `cut_list.json` | Kept timestamp ranges (`{start, end}`) and generated voiceover script |
+| `output_master.mp4` | Final rendered and trimmed video |
+| `pipeline.log` | Structured log of the entire pipeline run |
+
+---
+
+## Pipeline Stages
+
+The pipeline runs five stages in sequence. Each stage can be resumed independently if its output artifact already exists.
+
+1. **Extract** (`extract.py`) — Pulls frames at the configured interval using ffmpeg. Returns empty list on failure instead of aborting.
+2. **Analyze** (`analyze.py`) — Feeds frames to a local VLM. Generates `vision_log.json` with per-frame activity judgments. Retries inference up to 3 times with exponential backoff.
+3. **Generate** (`generate.py`) — Produces `cut_list.json` from the vision log. Filters inactive frames, merges adjacent active segments, drafts voiceover script. Falls back to deterministic mode when LLM is unavailable.
+4. **Assemble** (`assemble.py`) — Slices and concatenates the original video using the cut list with MoviePy. Cleans up temp files on success.
+5. **Validate** (`validate.py`) — Verifies output exists, has non-zero duration, and segment count matches the cut list.
+
+---
+
+## Error Recovery
+
+- **Retry logic:** VLM and LLM inference calls retry up to 3 times with exponential backoff (1s → 2s → 4s).
+- **ffmpeg failures:** Logged and skipped; the pipeline returns an empty frame list rather than aborting.
+- **Resume support:** If `vision_log.json`, `cut_list.json`, or `output_master.mp4` already exist in the output directory, the corresponding stages are skipped on re-run.
+
+---
+
+## Development
+
+```bash
+# Type check
+mypy .
+
+# Lint
+ruff check .
+
+# Run tests (unit only, no VLM/LLM required)
+pytest -m "not slow and not integration"
+
+# Run full test suite (includes integration tests with synthetic video)
+pytest
+```
+
+Project follows the Mr. Wiggum (Ralph) autonomous loop structure. See `prd.json` for the full story backlog and `scripts/ralph/AGENTS.md` for development patterns.
