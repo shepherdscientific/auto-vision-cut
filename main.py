@@ -7,6 +7,7 @@ from autovideo.assemble import run as assemble_run
 from autovideo.classify import run as classify_run
 from autovideo.config import Config
 from autovideo.dedup import run as dedup_run
+from autovideo.induce import induce_run
 from autovideo.logging_setup import get_module_logger, setup_logging
 from autovideo.resume import get_pipeline_stage_status
 from autovideo.review import run as review_run
@@ -75,6 +76,29 @@ def _run_transcript_pipeline(
             video_label,
             segments_path,
         )
+
+    if config.induce_from_path:
+        logger.info("[%s] === Stage 2c: Criteria Induction ===", video_label)
+        try:
+            induced = induce_run(
+                config=config,
+                transcript_path=transcript_path,
+                approved_path=(
+                    approved_cut_list_path
+                    if os.path.isfile(approved_cut_list_path)
+                    else None
+                ),
+            )
+            if induced:
+                config.criteria_path = induced
+                logger.info(
+                    "[%s] Using induced criteria: %s", video_label, induced,
+                )
+        except Exception as exc:
+            logger.warning(
+                "[%s] Criteria induction failed, falling back to default: %s",
+                video_label, exc,
+            )
 
     if not status.get("generate_done"):
         logger.info("[%s] === Stage 3: LLM Segment Classification ===", video_label)

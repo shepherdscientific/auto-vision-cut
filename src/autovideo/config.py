@@ -39,6 +39,9 @@ class Config:
     always_keep: list[str] = field(default_factory=list)
     always_cut: list[str] = field(default_factory=list)
     approval_required: bool = True
+    induce_from_path: str | None = None
+    criteria_channel: str = "default"
+    induce_force: bool = False
 
     _defaults: dict[str, Any] = field(default_factory=dict, repr=False, init=False)
 
@@ -61,6 +64,9 @@ class Config:
             "always_keep": [],
             "always_cut": [],
             "approval_required": True,
+            "induce_from_path": None,
+            "criteria_channel": "default",
+            "induce_force": False,
         }
 
     def resolve_vlm_path(self) -> str:
@@ -151,6 +157,24 @@ class Config:
             default=None,
             help="Skip the human review gate and proceed directly to assembly",
         )
+        parser.add_argument(
+            "--induce-from",
+            type=str,
+            default=None,
+            help="Prior run output dir (or transcript.json) to auto-generate criteria",
+        )
+        parser.add_argument(
+            "--criteria-channel",
+            type=str,
+            default=None,
+            help="Channel name for induced criteria file (criteria/<channel>.md)",
+        )
+        parser.add_argument(
+            "--induce-force",
+            action="store_true",
+            default=None,
+            help="Regenerate criteria even if the file already exists",
+        )
         args = parser.parse_args(argv)
 
         config = cls()
@@ -174,6 +198,12 @@ class Config:
             config.frame_interval = args.frame_interval
         if args.no_approval is True:
             config.approval_required = False
+        if args.induce_from is not None:
+            config.induce_from_path = args.induce_from
+        if args.criteria_channel is not None:
+            config.criteria_channel = args.criteria_channel
+        if args.induce_force is True:
+            config.induce_force = True
 
         if overrides:
             config = cls.from_dict({**config.__dict__, **overrides})
