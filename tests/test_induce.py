@@ -14,6 +14,7 @@ from autovideo.induce import (
     _find_common_fillers,
     _has_mlx_lm,
     _load_model,
+    _load_overrides,
     _strip_fences,
     induce_criteria,
     induce_run,
@@ -355,4 +356,126 @@ def test_induce_run_produces_criteria(tmp_path: Path) -> None:
     criteria_path = Path(result)
     assert criteria_path.exists()
     assert "Cut/Keep Criteria" in criteria_path.read_text()
+    criteria_path.unlink()
+
+
+def test_load_overrides_nonexistent_file(tmp_path: Path) -> None:
+    result = _load_overrides(str(tmp_path))
+    assert result is None
+
+
+def test_load_overrides_loads_file(tmp_path: Path) -> None:
+    overrides = [
+        {"id": 1, "text": "Filler content", "decision": "cut", "original_decision": "keep", "reason": "user_override: edited in CSV"},
+    ]
+    opath = tmp_path / "overrides.json"
+    opath.write_text(json.dumps(overrides))
+    result = _load_overrides(str(tmp_path))
+    assert result is not None
+    assert len(result) == 1
+    assert result[0]["id"] == 1
+
+
+def test_load_overrides_skips_empty_list(tmp_path: Path) -> None:
+    opath = tmp_path / "overrides.json"
+    opath.write_text(json.dumps([]))
+    result = _load_overrides(str(tmp_path))
+    assert result is None
+
+
+def test_load_overrides_skips_bad_json(tmp_path: Path) -> None:
+    opath = tmp_path / "overrides.json"
+    opath.write_text("this is not json")
+    result = _load_overrides(str(tmp_path))
+    assert result is None
+
+
+def test_build_induction_input_with_overrides(tmp_path: Path) -> None:
+    segments = [
+        _make_segment(0, 0.0, 5.0, "Keep this content"),
+        _make_segment(1, 5.0, 10.0, "Um like filler here"),
+    ]
+    tpath = tmp_path / "transcript.json"
+    _write_transcript(tpath, segments)
+
+    overrides_path = tmp_path / "overrides.json"
+    overrides_path.write_text(json.dumps([
+        {"id": 1, "text": "Um like filler here", "decision": "cut", "original_decision": "keep", "reason": "user_override: edited in CSV"},
+    ]))
+
+    result = _build_induction_input(str(tpath), overrides_path=str(overrides_path))
+    assert "User Override Examples" in result
+    assert "Um like filler here" in result
+
+
+def test_induce_criteria_with_overrides(tmp_path: Path) -> None:
+    segments = [
+        _make_segment(0, 0.0, 5.0, "Keep this content"),
+        _make_segment(1, 5.0, 10.0, "Um like cut this filler"),
+    ]
+    tpath = tmp_path / "transcript.json"
+    _write_transcript(tpath, segments)
+
+    overrides_path = tmp_path / "overrides.json"
+    overrides_path.write_text(json.dumps([
+        {"id": 1, "text": "Um like cut this filler", "decision": "cut", "original_decision": "keep", "reason": "user_override: edited in CSV"},
+    ]))
+
+    output_path = str(tmp_path / "criteria" / "override_test.md")
+
+    fake_model = Mock()
+    fake_tokenizer = Mock()
+    fake_mlx_lm = MagicMock()
+    fake_mlx_lm.load.return_value = (fake_model, fake_tokenizer)
+    fake_mlx_lm.generate.return_value = (
+        "```md\n# Cut/Keep Criteria\n\nCUT: fillers\nKEEP: content\n```"
+    )
+
+    with patch.dict("sys.modules", {"mlx_lm": fake_mlx_lm}):
+        with patch("autovideo.induce.time.sleep", return_value=None):
+            induce_criteria(
+                transcript_path=str(tpath),
+                output_criteria_path=output_path,
+                model_path="test-model",
+                overrides_path=str(overrides_path),
+                channel_name="override_test",
+            )
+
+    assert Path(output_path).exists()
+
+
+def test_induce_run_discovers_overrides(tmp_path: Path) -> None:
+    segments = [_make_segment(0, 0.0, 5.0, "Hello world")]
+    prior_dir = tmp_path / "prior"
+    prior_dir.mkdir()
+    tpath = prior_dir / "transcript.json"
+    _write_transcript(tpath, segments)
+
+    overrides_path = prior_dir / "overrides.json"
+    overrides_path.write_text(json.dumps([
+        {"id": 0, "text": "Hello world", "decision": "keep", "original_decision": "cut", "reason": "user_override: edited in CSV"},
+    ]))
+
+    config = Config(
+        induce_from_path=str(prior_dir),
+        criteria_channel="override_channel",
+        induce_force=True,
+    )
+
+    fake_model = Mock()
+    fake_tokenizer = Mock()
+    fake_mlx_lm = MagicMock()
+    fake_mlx_lm.load.return_value = (fake_model, fake_tokenizer)
+    fake_mlx_lm.generate.return_value = "```md\n# Cut/Keep Criteria\n\nCUT: fillers\n```"
+
+    with patch.dict("sys.modules", {"mlx_lm": fake_mlx_lm}):
+        with patch("autovideo.induce.time.sleep", return_value=None):
+            result = induce_run(
+                config,
+                transcript_path=str(tpath),
+            )
+
+    assert result is not None
+    criteria_path = Path(result)
+    assert criteria_path.exists()
     criteria_path.unlink()

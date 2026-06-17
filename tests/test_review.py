@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 
 from autovideo.review import (
+    OVERRIDES_FILENAME,
+    _persist_overrides,
     export_csv,
     generate_review_md,
     run,
@@ -242,3 +244,115 @@ def test_run_blocks_on_corrupt_segments(tmp_path: Path) -> None:
 
     assert result is None
     assert (tmp_path / "review.md").exists()
+
+
+def test_persist_overrides_writes_file_on_user_changes(tmp_path: Path) -> None:
+    decisions = [
+        {"id": 1, "decision": "keep", "_text": "Keep this content", "reason": "substantive explanation", "confidence": 0.9, "tag": "substantive"},
+        {"id": 2, "decision": "cut", "_text": "Um like filler", "reason": "user_override: edited in CSV", "confidence": 0.85, "tag": "filler"},
+        {"id": 3, "decision": "keep", "_text": "Welcome back", "reason": "user_override: changed mind", "confidence": 0.8, "tag": "filler"},
+    ]
+    cut_list = {"decisions": decisions, "keep": [], "stats": {}}
+    result = _persist_overrides(cut_list, str(tmp_path))
+    assert result is not None
+    override_path = tmp_path / OVERRIDES_FILENAME
+    assert override_path.exists()
+    data = json.loads(override_path.read_text())
+    assert len(data) == 2
+    assert data[0]["id"] == 2
+    assert data[0]["decision"] == "cut"
+    assert data[0]["original_decision"] == "keep"
+    assert data[0]["text"] == "Um like filler"
+    assert data[1]["id"] == 3
+    assert data[1]["decision"] == "keep"
+    assert data[1]["original_decision"] == "cut"
+
+
+def test_persist_overrides_no_overrides(tmp_path: Path) -> None:
+    decisions = [
+        {"id": 1, "decision": "keep", "reason": "good content", "confidence": 0.9},
+        {"id": 2, "decision": "cut", "reason": "filler words", "confidence": 0.85},
+    ]
+    cut_list = {"decisions": decisions, "keep": [], "stats": {}}
+    result = _persist_overrides(cut_list, str(tmp_path))
+    assert result is None
+    override_path = tmp_path / OVERRIDES_FILENAME
+    assert not override_path.exists()
+
+
+def test_run_with_csv_overrides_persists_override_file(tmp_path: Path) -> None:
+    output_dir = str(tmp_path)
+    segments_path = tmp_path / "segments.json"
+    segments_path.write_text(json.dumps(SAMPLE_SEGMENTS))
+    cut_list_path = tmp_path / "cut_list.json"
+    cut_list_path.write_text(json.dumps(SAMPLE_CUT_LIST))
+
+    run(
+        cut_list_path=str(cut_list_path),
+        segments_path=str(segments_path),
+        output_dir=output_dir,
+        approval_required=True,
+    )
+
+    csv_path = tmp_path / "cut_list_review.csv"
+    assert csv_path.exists()
+
+    rows: list[dict[str, str]] = []
+    with open(str(csv_path), "r") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            rows.append(row)
+
+    rows[0]["decision"] = "cut"
+    with open(str(csv_path), "w", newline="") as f:
+        fieldnames = ["id", "start", "end", "decision", "confidence", "tag", "reason", "text"]
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for r in rows:
+            writer.writerow(r)
+
+    result = run(
+        cut_list_path=str(cut_list_path),
+        segments_path=str(segments_path),
+        output_dir=output_dir,
+        approval_required=True,
+    )
+
+    assert result is not None
+    assert (tmp_path / OVERRIDES_FILENAME).exists()
+    overrides = json.loads((tmp_path / OVERRIDES_FILENAME).read_text())
+    assert len(overrides) == 1
+    assert overrides[0]["id"] == 1
+    assert overrides[0]["decision"] == "cut"
+    assert overrides[0]["original_decision"] == "keep"
+
+
+def test_persist_overrides_skips_non_override_reasons(tmp_path: Path) -> None:
+    decisions = [
+        {"id": 1, "decision": "cut", "_text": "Filler", "reason": "user_override: edited in CSV"},
+        {"id": 2, "decision": "keep", "_text": "Good stuff", "reason": "substantive explanation"},
+        {"id": 3, "decision": "cut", "_text": "Dead air", "reason": ""},
+    ]
+    cut_list = {"decisions": decisions, "keep": [], "stats": {}}
+    result = _persist_overrides(cut_list, str(tmp_path))
+    assert result is not None
+    data = json.loads((tmp_path / OVERRIDES_FILENAME).read_text())
+    assert len(data) == 1
+    assert data[0]["id"] == 1
+
+
+def test_run_with_csv_overrides_empty_override_list(tmp_path: Path) -> None:
+    output_dir = str(tmp_path)
+    segments_path = tmp_path / "segments.json"
+    segments_path.write_text(json.dumps(SAMPLE_SEGMENTS))
+    cut_list_path = tmp_path / "cut_list.json"
+    cut_list_path.write_text(json.dumps(SAMPLE_CUT_LIST))
+
+    run(
+        cut_list_path=str(cut_list_path),
+        segments_path=str(segments_path),
+        output_dir=output_dir,
+        approval_required=False,
+    )
+
+    assert not (tmp_path / OVERRIDES_FILENAME).exists()

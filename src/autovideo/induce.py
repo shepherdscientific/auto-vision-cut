@@ -165,9 +165,25 @@ def _find_common_fillers(
     return [fw for fw, _ in sorted_fillers[:5]] or ["um", "uh", "like", "you know"]
 
 
+def _load_overrides(prior_dir: str) -> list[dict[str, str | int | float]] | None:
+    """Load user override examples from a prior run's overrides.json."""
+    override_path = os.path.join(prior_dir, "overrides.json")
+    if not os.path.isfile(override_path):
+        return None
+    try:
+        data = _load_json(override_path)
+        if isinstance(data, list) and data:
+            logger.info("Loaded %d user override examples from %s", len(data), override_path)
+            return data
+    except Exception as exc:
+        logger.warning("Failed to load overrides from %s: %s", override_path, exc)
+    return None
+
+
 def _build_induction_input(
     transcript_path: str,
     approved_path: str | None = None,
+    overrides_path: str | None = None,
 ) -> str:
     parts: list[str] = []
 
@@ -202,6 +218,29 @@ def _build_induction_input(
         except Exception as exc:
             logger.warning(
                 "Failed to read approved cut list, continuing without: %s", exc
+            )
+
+    if overrides_path:
+        try:
+            overrides = _load_json(overrides_path)
+            if isinstance(overrides, list) and overrides:
+                parts.append("\n## User Override Examples (learn from these)\n\n")
+                parts.append(
+                    "The creator manually changed these segments' decisions. "
+                    "Treat them as high-signal corrections to the model's judgment:\n\n"
+                )
+                for o in overrides:
+                    oid = o.get("id", "?")
+                    otext = o.get("text", "")
+                    odec = o.get("decision", "?")
+                    oorig = o.get("original_decision", "?")
+                    parts.append(
+                        f"- Segment {oid}: text=\"{otext}\", "
+                        f"original={oorig}, overridden_to={odec}"
+                    )
+        except Exception as exc:
+            logger.warning(
+                "Failed to read override examples, continuing without: %s", exc
             )
 
     return "\n".join(parts)
@@ -269,15 +308,16 @@ def induce_criteria(
     model_path: str,
     approved_path: str | None = None,
     channel_name: str = "custom",
+    overrides_path: str | None = None,
 ) -> str:
     logger.info(
-        "Criteria induction started (transcript=%s, approved=%s, channel=%s)",
-        transcript_path, approved_path or "none", channel_name,
+        "Criteria induction started (transcript=%s, approved=%s, overrides=%s, channel=%s)",
+        transcript_path, approved_path or "none", overrides_path or "none", channel_name,
     )
     start_time = time.monotonic()
 
     filler_words = _find_common_fillers(transcript_path, approved_path)
-    induction_input = _build_induction_input(transcript_path, approved_path)
+    induction_input = _build_induction_input(transcript_path, approved_path, overrides_path)
     fillers_text = ", ".join(f'"{fw}"' for fw in filler_words)
 
     system_with_fillers = INDUCTION_SYSTEM_PROMPT.replace(
@@ -352,10 +392,17 @@ def induce_run(
 
     model_path = config.resolve_llm_path()
 
+    overrides_to_use: str | None = None
+    if os.path.isdir(induce_from):
+        overrides_path = os.path.join(induce_from, "overrides.json")
+        if os.path.isfile(overrides_path):
+            overrides_to_use = overrides_path
+
     return induce_criteria(
         transcript_path=transcript_to_use,
         output_criteria_path=output_criteria_path,
         model_path=model_path,
         approved_path=approved_to_use,
         channel_name=channel,
+        overrides_path=overrides_to_use,
     )

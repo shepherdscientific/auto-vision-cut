@@ -19,6 +19,7 @@ logger = get_module_logger(__name__)
 REVIEW_MD_FILENAME = "review.md"
 REVIEW_CSV_FILENAME = "cut_list_review.csv"
 APPROVED_CUTLIST_FILENAME = "cut_list.approved.json"
+OVERRIDES_FILENAME = "overrides.json"
 
 TIME_SAVED_HEADER = "cut_list will remove"
 
@@ -189,6 +190,37 @@ def _apply_csv_overrides(
     return cut_list
 
 
+def _persist_overrides(
+    cut_list: dict[str, Any], output_dir: str
+) -> str | None:
+    """Persist human override decisions as labeled examples for criteria learning.
+
+    Writes overrides.json: array of {id, text, decision, original_decision,
+    reason} for segments whose decision was changed by the user in the review
+    gate. Returns the path or None if no overrides were found.
+    """
+    overrides = []
+    for d in cut_list.get("decisions", []):
+        reason = d.get("reason", "")
+        if reason.startswith("user_override:"):
+            overrides.append({
+                "id": d.get("id"),
+                "text": d.get("_text", ""),
+                "decision": d.get("decision"),
+                "original_decision": "keep" if d["decision"] == "cut" else "cut",
+                "reason": reason,
+            })
+
+    if not overrides:
+        return None
+
+    override_path = os.path.join(output_dir, OVERRIDES_FILENAME)
+    with open(override_path, "w", encoding="utf-8") as f:
+        json.dump(overrides, f, indent=2, ensure_ascii=False)
+    logger.info("Persisted %d user overrides to %s", len(overrides), override_path)
+    return override_path
+
+
 def _write_approved_cut_list(cut_list: dict[str, Any], output_dir: str) -> str:
     approved_path = os.path.join(output_dir, APPROVED_CUTLIST_FILENAME)
     os.makedirs(os.path.dirname(approved_path), exist_ok=True)
@@ -235,6 +267,7 @@ def run(
     if override_path:
         logger.info("Found edited review CSV at %s — applying overrides", override_path)
         cut_list = _apply_csv_overrides(cut_list, override_path)
+        _persist_overrides(cut_list, output_dir)
         approved = _write_approved_cut_list(cut_list, output_dir)
         elapsed = time.monotonic() - start_time
         logger.info("Review gate passed with overrides (elapsed=%.1fs)", elapsed)
