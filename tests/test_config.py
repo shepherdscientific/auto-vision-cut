@@ -6,6 +6,8 @@ from pathlib import Path
 
 from autovideo.config import Config
 
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
 
 def test_default_config():
     cfg = Config()
@@ -116,3 +118,78 @@ def test_config_resolve_path():
     resolved = cfg.resolve_path("test.mp4")
     assert resolved.is_absolute()
     assert resolved.name == "test.mp4"
+
+
+def test_config_criteria_defaults():
+    cfg = Config()
+    assert cfg.criteria_path == "criteria/default.md"
+    assert cfg.aggressiveness == "medium"
+    assert cfg.filler_sensitivity == "medium"
+    assert cfg.always_keep == []
+    assert cfg.always_cut == []
+
+
+def test_config_criteria_from_dict():
+    cfg = Config.from_dict({
+        "aggressiveness": "heavy",
+        "filler_sensitivity": "high",
+        "always_keep": ["subscribe"],
+        "always_cut": ["um"],
+    })
+    assert cfg.aggressiveness == "heavy"
+    assert cfg.filler_sensitivity == "high"
+    assert cfg.always_keep == ["subscribe"]
+    assert cfg.always_cut == ["um"]
+
+
+def test_config_read_criteria(tmp_path):
+    criteria_dir = tmp_path / "criteria"
+    criteria_dir.mkdir()
+    criteria_file = criteria_dir / "test.md"
+    criteria_file.write_text("# Test criteria\nCUT: filler")
+    cfg = Config(criteria_path=str(criteria_file))
+    content = cfg.read_criteria()
+    assert "# Test criteria" in content
+    assert "CUT: filler" in content
+
+
+def test_config_read_criteria_missing(tmp_path):
+    cfg = Config(criteria_path=str(tmp_path / "nonexistent.md"))
+    try:
+        cfg.read_criteria()
+        assert False, "Should have raised FileNotFoundError"
+    except FileNotFoundError:
+        pass
+
+
+def test_config_read_criteria_default_exists():
+    cfg = Config(criteria_path=str(_PROJECT_ROOT / "criteria" / "default.md"))
+    content = cfg.read_criteria()
+    assert "CUT Rules" in content
+    assert "KEEP Rules" in content
+    assert "JSON Output Contract" in content
+    assert "aggressiveness" in content
+
+
+def test_config_read_criteria_injects_live_values():
+    cfg = Config(
+        criteria_path=str(_PROJECT_ROOT / "criteria" / "default.md"),
+        aggressiveness="heavy",
+        filler_sensitivity="high",
+        always_keep=["subscribe", "click"],
+        always_cut=["um"],
+    )
+    content = cfg.read_criteria()
+    assert "**aggressiveness**: heavy" in content
+    assert "**filler_sensitivity**: high" in content
+    assert '"subscribe"' in content and '"click"' in content
+    assert '"um"' in content
+
+
+def test_config_read_criteria_preserves_file_on_default_values():
+    cfg = Config(criteria_path=str(_PROJECT_ROOT / "criteria" / "default.md"))
+    content = cfg.read_criteria()
+    assert "**aggressiveness**: medium" in content
+    assert "**filler_sensitivity**: medium" in content
+    assert "**always_keep**: []" in content
+    assert "**always_cut**: []" in content

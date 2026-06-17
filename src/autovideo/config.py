@@ -33,6 +33,12 @@ class Config:
     context_paths: list[str] = field(default_factory=list)
     output_mode: str = "separate"
 
+    criteria_path: str = "criteria/default.md"
+    aggressiveness: str = "medium"
+    filler_sensitivity: str = "medium"
+    always_keep: list[str] = field(default_factory=list)
+    always_cut: list[str] = field(default_factory=list)
+
     _defaults: dict[str, Any] = field(default_factory=dict, repr=False, init=False)
 
     def __post_init__(self) -> None:
@@ -48,6 +54,11 @@ class Config:
             "config_path": None,
             "context_paths": [],
             "output_mode": "separate",
+            "criteria_path": "criteria/default.md",
+            "aggressiveness": "medium",
+            "filler_sensitivity": "medium",
+            "always_keep": [],
+            "always_cut": [],
         }
 
     def resolve_vlm_path(self) -> str:
@@ -209,3 +220,17 @@ class Config:
             except Exception:
                 pass
         return "\n\n".join(parts)
+
+    def resolve_criteria_path(self) -> Path:
+        return Path(self.criteria_path).resolve()
+
+    def read_criteria(self) -> str:
+        path = self.resolve_criteria_path()
+        if not path.is_file():
+            raise FileNotFoundError(f"Criteria file not found: {path}")
+        raw = path.read_text(encoding="utf-8")
+        raw = raw.replace("{{AGGRESSIVENESS}}", self.aggressiveness)
+        raw = raw.replace("{{FILLER_SENSITIVITY}}", self.filler_sensitivity)
+        raw = raw.replace("{{ALWAYS_KEEP}}", json.dumps(self.always_keep))
+        raw = raw.replace("{{ALWAYS_CUT}}", json.dumps(self.always_cut))
+        return raw
