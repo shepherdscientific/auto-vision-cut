@@ -1,38 +1,52 @@
-.env*
-scripts/**
-!scripts/*
-prd.json
-opencode.json
+# === Secrets / ralph env — real API keys, NEVER commit =====================
+.env
+.env.deepseek
+.env.deepseek-kimi
+.env.openrouter
+.env.local
+.env.*.local
+# The example (placeholders only) IS committed:
+!.env.deepseek-kimi.example
 
-# Python
+# === Python ================================================================
+__pycache__/
+*.py[cod]
 .venv/
 venv/
-__pycache__/
-*.pyc
-*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 *.egg-info/
 dist/
 build/
 
-# Ralph loop artifacts
+# === Ralph runtime artifacts ===============================================
 .ralph-cost.log
 .last-branch
 archive/
-progress.txt
 
-# Pipeline outputs
+# === Pipeline outputs / media (regenerated; keep out of git) ===============
 output/
 output_master.mp4
+vision_log.json
+transcript.json
+segments.json
+cut_list.json
 event_log.json
 narration_script.md
-cut_list.json
-
-# Frame extraction temp data
 frames/
 temp/
+*.mp4
 
-# OS junk
+# === Local model weights (local-only; never commit) ========================
+*.safetensors
+*.ckpt
+*.pt
+*.bin
+weights/
+models/
+
+# === OS / editor junk ======================================================
 .DS_Store
 Thumbs.db
 .aider*
-*.mp4
