@@ -106,7 +106,7 @@
         "Typecheck, lint, integration test on synthetic clip pass."
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "DRAFT — FOR CONSIDERATION. Reuses assemble.py/validate.py; prefers ffmpeg concat over MoviePy for speed/robustness."
     },
     {

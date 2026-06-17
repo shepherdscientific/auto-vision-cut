@@ -150,3 +150,9 @@
 - resume.py: added review_done status checking cut_list.approved.json
 - 10 unit tests in tests/test_review.py covering all review gate paths (markdown, CSV export, block/unblock, overrides, enrichment, empty decisions, corrupt segments)
 - 224 tests passing; mypy, ruff, and full pytest suite clean
+
+## US-106: Frame-Accurate Render from Approved Cut List — COMPLETED
+- Created tests/test_render.py: 15 unit tests covering _build_concat_file (concat file generation, invalid range skipping, duration clamping, negative start), _run_ffmpeg_concat (output dir creation, ffmpeg arg verification, failure error), and run() MoviePy fallback (audio-preserving assembly, voiceover delegation, empty keep ranges, ffmpeg→MoviePy fallback, invalid cut list rejection)
+- No code changes needed to src/autovideo/render.py — the module already supported ffmpeg concat demuxer (frame-accurate, re-encoded for clean joins) with MoviePy fallback, audio preservation via inpoint/outpoint referencing original file, and voiceover overlay support
+- validate.py already reused in main.py Stage 6 for output existence, duration, and segment count verification
+- 249 tests passing (234 fast + 15 new); mypy and ruff clean
