@@ -5,7 +5,6 @@ resume from the last successful stage rather than restarting from scratch.
 """
 
 import os
-from pathlib import Path
 from typing import Optional
 
 from autovideo.logging_setup import get_module_logger
@@ -21,25 +20,22 @@ def get_pipeline_stage_status(
     output_dir: str = "output",
     video_path: Optional[str] = None,
 ) -> dict[str, bool]:
-    vision_log_path = os.path.join(output_dir, "vision_log.json")
+    transcript_path = os.path.join(output_dir, "transcript.json")
+    segments_path = os.path.join(output_dir, "segments.json")
     cut_list_path = os.path.join(output_dir, "cut_list.json")
     output_video_path = os.path.join(output_dir, "output_master.mp4")
 
     status: dict[str, bool] = {
-        "analyze_done": check_artifact(vision_log_path),
+        "transcribe_done": check_artifact(transcript_path),
+        "segment_done": check_artifact(segments_path),
         "generate_done": check_artifact(cut_list_path),
         "assemble_done": check_artifact(output_video_path),
     }
 
-    if video_path:
-        status["extract_done"] = (
-            Path(output_dir).exists()
-            and bool(list(Path(output_dir).glob("frames/*.jpg")))
-        )
-
     logger.info(
-        "Pipeline stage status: analyze=%s generate=%s assemble=%s",
-        status["analyze_done"],
+        "Pipeline stage status: transcribe=%s segment=%s generate=%s assemble=%s",
+        status["transcribe_done"],
+        status["segment_done"],
         status["generate_done"],
         status["assemble_done"],
     )
@@ -57,9 +53,11 @@ def resume_from_stage(
         logger.info("Final output already exists, all stages complete")
     elif status.get("generate_done"):
         logger.info("Resuming from assembly stage")
-    elif status.get("analyze_done"):
-        logger.info("Resuming from generate stage")
+    elif status.get("segment_done"):
+        logger.info("Resuming from classification stage")
+    elif status.get("transcribe_done"):
+        logger.info("Resuming from segmentation stage")
     else:
-        logger.info("Starting pipeline from extract stage")
+        logger.info("Starting pipeline from transcription stage")
 
     return status

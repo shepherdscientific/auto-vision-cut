@@ -3,13 +3,13 @@
 import os
 import sys
 
-from autovideo.analyze import run as analyze_run
 from autovideo.assemble import run as assemble_run
+from autovideo.classify import run as classify_run
 from autovideo.config import Config
-from autovideo.extract import run as extract_run
-from autovideo.generate import run as generate_run
 from autovideo.logging_setup import get_module_logger, setup_logging
 from autovideo.resume import get_pipeline_stage_status
+from autovideo.segment import segment_transcript
+from autovideo.transcribe import transcribe
 from autovideo.validate import run as validate_run
 
 logger = get_module_logger(__name__)
@@ -17,108 +17,73 @@ logger = get_module_logger(__name__)
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi"}
 
 
-def _run_pipeline(
+def _run_transcript_pipeline(
     video_path: str,
     config: Config,
     output_dir: str,
     video_label: str,
 ) -> int:
-    vlm_model = config.resolve_vlm_path()
-    llm_model = config.resolve_llm_path()
-    temp_dir = os.path.join(output_dir, "temp")
-    frame_interval = config.frame_interval
-    context_text = config.read_context_docs()
-
     status = get_pipeline_stage_status(output_dir)
-    vision_log_path = os.path.join(output_dir, "vision_log.json")
+    transcript_path = os.path.join(output_dir, "transcript.json")
+    segments_path = os.path.join(output_dir, "segments.json")
     cut_list_path = os.path.join(output_dir, "cut_list.json")
     output_video_path = os.path.join(output_dir, "output_master.mp4")
-    frames_dir = os.path.join(temp_dir, "frames")
 
-    logger.info(
-        "Config: frame_interval=%d vlm=%s llm=%s output=%s",
-        frame_interval,
-        vlm_model,
-        llm_model,
-        output_dir,
-    )
-
-    if not status.get("analyze_done"):
-        logger.info("[%s] === Stage 1: Frame Extraction ===", video_label)
+    if not status.get("transcribe_done"):
+        logger.info("[%s] === Stage 1: Audio Extraction + Transcription ===", video_label)
         try:
-            frames = extract_run(
+            transcript_path = transcribe(
                 video_path=video_path,
-                frame_interval=frame_interval,
-                output_dir=temp_dir,
-            )
-        except Exception as exc:
-            logger.error("[%s] Frame extraction failed: %s", video_label, exc)
-            return 1
-
-        if not frames:
-            logger.error(
-                "[%s] No frames extracted — pipeline cannot proceed", video_label
-            )
-            return 1
-
-        logger.info("[%s] === Stage 2: Vision Analysis ===", video_label)
-        try:
-            analyze_run(
-                frames=frames_dir,
-                model_path=vlm_model,
                 output_dir=output_dir,
             )
-        except FileNotFoundError as exc:
-            logger.error(
-                "[%s] VLM model not found: %s. "
-                "Install it with: mlx_vlm.download --model %s",
-                video_label,
-                exc,
-                vlm_model,
-            )
-            return 1
         except Exception as exc:
-            logger.error("[%s] Vision analysis failed: %s", video_label, exc)
+            logger.error("[%s] Transcription failed: %s", video_label, exc)
             return 1
     else:
         logger.info(
-            "[%s] Vision log exists, skipping extract + analyze (%s)",
+            "[%s] Transcript exists, skipping transcription (%s)",
             video_label,
-            vision_log_path,
+            transcript_path,
         )
 
-    if not status.get("generate_done") or not os.path.isfile(vision_log_path):
-        logger.info("[%s] === Stage 3: Cut-List Generation ===", video_label)
+    if not status.get("segment_done"):
+        logger.info("[%s] === Stage 2: Transcript Segmentation ===", video_label)
         try:
-            generate_run(
-                vision_log_path=vision_log_path,
-                model_path=llm_model,
+            segment_transcript(
+                transcript_path=transcript_path,
                 output_dir=output_dir,
-                frame_interval=frame_interval,
-                use_llm=False,
-                context_text=context_text if context_text else None,
             )
-        except FileNotFoundError as exc:
-            logger.error(
-                "[%s] LLM model not found: %s. "
-                "Install it with: mlx_lm.download --model %s",
-                video_label,
-                exc,
-                llm_model,
-            )
-            return 1
         except Exception as exc:
-            logger.error("[%s] Cut-list generation failed: %s", video_label, exc)
+            logger.error("[%s] Segmentation failed: %s", video_label, exc)
             return 1
     else:
         logger.info(
-            "[%s] Cut list exists, skipping generate (%s)",
+            "[%s] Segments exist, skipping segmentation (%s)",
+            video_label,
+            segments_path,
+        )
+
+    if not status.get("generate_done"):
+        logger.info("[%s] === Stage 3: LLM Segment Classification ===", video_label)
+        try:
+            classify_run(
+                config=config,
+                segments_path=segments_path,
+                output_dir=output_dir,
+            )
+        except Exception as exc:
+            logger.error("[%s] Classification failed: %s", video_label, exc)
+            return 1
+    else:
+        logger.info(
+            "[%s] Cut list exists, skipping classification (%s)",
             video_label,
             cut_list_path,
         )
 
     if not status.get("assemble_done"):
         logger.info("[%s] === Stage 4: Video Assembly ===", video_label)
+        temp_dir = os.path.join(output_dir, "temp")
         try:
             assemble_run(
                 video_path=video_path,
@@ -149,7 +114,6 @@ def _run_pipeline(
 
     logger.info("[%s] Pipeline completed successfully", video_label)
     logger.info("[%s]   Output video: %s", video_label, output_video_path)
-    logger.info("[%s]   Vision log:   %s", video_label, vision_log_path)
     logger.info("[%s]   Cut list:     %s", video_label, cut_list_path)
 
     return 0
@@ -189,7 +153,6 @@ def main(argv: list[str] | None = None) -> int:
         len(video_paths),
         config.output_mode,
     )
-    logger.info("VLM model: %s", config.resolve_vlm_path())
     logger.info("LLM model: %s", config.resolve_llm_path())
 
     context_paths = config.resolve_context_paths()
@@ -214,7 +177,7 @@ def main(argv: list[str] | None = None) -> int:
         logger.info("  Source: %s", vp)
         logger.info("  Output: %s", video_output_dir)
 
-        rc = _run_pipeline(
+        rc = _run_transcript_pipeline(
             video_path=str(vp),
             config=config,
             output_dir=video_output_dir,
