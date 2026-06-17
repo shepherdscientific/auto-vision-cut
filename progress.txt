@@ -156,3 +156,13 @@
 - No code changes needed to src/autovideo/render.py — the module already supported ffmpeg concat demuxer (frame-accurate, re-encoded for clean joins) with MoviePy fallback, audio preservation via inpoint/outpoint referencing original file, and voiceover overlay support
 - validate.py already reused in main.py Stage 6 for output existence, duration, and segment count verification
 - 249 tests passing (234 fast + 15 new); mypy and ruff clean
+
+## US-107: Auto-Generate Criteria from a Prior Run's Transcript — COMPLETED
+- Created src/autovideo/induce.py with induce_criteria() and induce_run()
+- Uses mlx_lm LLM (same pattern as classify.py) to derive a personalized criteria prompt from a prior transcript and optional approved cut list
+- Helper functions: _find_common_fillers() scans transcript for recurring filler words; _build_induction_input() formats transcript and approved decisions; _call_llm() with retry/backoff; _strip_fences() extracts text from markdown code fences; _load_model() with graceful fallback
+- INDUCTION_SYSTEM_PROMPT template includes CUT/KEEP rules structure, JSON output contract, runtime tunables, and recommended tunables with placeholders
+- Config fields added: induce_from_path (CLI --induce-from), criteria_channel (--criteria-channel), induce_force (--induce-force)
+- Wired into main.py as Stage 2c between segment/dedup and classify; sets config.criteria_path on success, falls back silently on failure
+- 24 unit tests in tests/test_induce.py covering all code paths (fence stripping, filler detection, input building, LLM calling, retry, load failure, output writing, config-driven run)
+- 260 tests passing; mypy and ruff clean

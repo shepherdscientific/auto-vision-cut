@@ -121,7 +121,7 @@
         "Typecheck, lint, unit tests (mocked LLM) pass."
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "DRAFT — FOR CONSIDERATION. This is the 'generate the prompt itself from extracted text on a previous run' capability the user asked for."
     },
     {
