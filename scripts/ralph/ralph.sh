@@ -24,7 +24,13 @@ set -e
 TOOL="amp"        # Default tool
 MAX_ITERATIONS=10
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PRD_FILE="$SCRIPT_DIR/prd.json"
+# Resolve the repository ROOT. The PRD (prd.json) and the canonical progress log
+# live at the repo root, NOT next to this script. Pointing PRD_FILE at
+# $SCRIPT_DIR/prd.json (scripts/ralph/prd.json — which normally does not exist)
+# silently disabled the early-exit / stuck-story guardrails and the per-iteration
+# STORY_ID selection, and under-counted the token estimate. Resolve it once here.
+REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$SCRIPT_DIR")"
+PRD_FILE="$REPO_ROOT/prd.json"
 PROGRESS_FILE="$SCRIPT_DIR/progress.txt"
 ARCHIVE_DIR="$SCRIPT_DIR/archive"
 LAST_BRANCH_FILE="$SCRIPT_DIR/.last-branch"
@@ -597,6 +603,57 @@ for i in $(seq 1 $MAX_ITERATIONS); do
     else
       REVIEW_RESULT="fail"
       echo "  ❌ Review gate reported issues on iteration $i (RESULT: FAIL)."
+    fi
+  fi
+
+  # -------------------------------------------------------------------------
+  # Harness-owned story completion — the LOOP owns bookkeeping, NOT the agent.
+  #
+  # Cheaper / quantized coding models reliably write working code but skip the
+  # git + jq + progress bookkeeping, so the story never flips to passes:true and
+  # the loop re-works the same first-incomplete story forever (printing-business
+  # got 0/13 this way). When the review gate PASSES, the loop itself completes
+  # the story it set out to work this iteration ($STORY_ID, captured BEFORE the
+  # agent ran): flip passes:true in the ROOT prd.json, append a progress.txt
+  # line, and commit feat(<STORY_ID>). The agent's code was already committed
+  # above (by the agent or the post-iteration auto-commit).
+  #
+  # Idempotent + non-disruptive to loops whose agent ALREADY self-completes (the
+  # cloud loops): it acts ONLY while the target story is still passes:false, and
+  # commits ONLY when the jq edit actually changed prd.json — a clean no-op when
+  # the agent already did the bookkeeping. Fires ONLY on PASS (never FAIL/skip).
+  # -------------------------------------------------------------------------
+  if [ "$REVIEW_RESULT" = "pass" ] && [ -n "${STORY_ID:-}" ] && [ "$STORY_ID" != "unknown" ] && [ -f "$PRD_FILE" ]; then
+    STORY_STILL_OPEN=$(jq -r --arg id "$STORY_ID" \
+      'if any(.userStories[]?; .id == $id and (.passes != true)) then "yes" else "no" end' \
+      "$PRD_FILE" 2>/dev/null || echo "no")
+    if [ "$STORY_STILL_OPEN" = "yes" ]; then
+      STORY_TITLE=$(jq -r --arg id "$STORY_ID" \
+        'first(.userStories[]? | select(.id == $id) | .title) // ""' "$PRD_FILE" 2>/dev/null || echo "")
+      # (a) Flip passes:true for the target story in the ROOT prd.json (atomic
+      #     temp-file write so a crash mid-write can't corrupt the PRD).
+      _PRD_TMP=$(mktemp)
+      if jq --arg id "$STORY_ID" \
+           '(.userStories[]? | select(.id == $id) | .passes) = true' \
+           "$PRD_FILE" > "$_PRD_TMP" 2>/dev/null && [ -s "$_PRD_TMP" ]; then
+        mv "$_PRD_TMP" "$PRD_FILE" 2>/dev/null || rm -f "$_PRD_TMP"
+      else
+        rm -f "$_PRD_TMP"
+      fi
+      # (c) Append a progress.txt entry to the repo-root progress log.
+      printf '%s — %s — %s — completed by harness (review PASS, iteration %s)\n' \
+        "$(date +%Y-%m-%dT%H:%M:%S%z)" "$STORY_ID" "${STORY_TITLE:-untitled}" "$i" \
+        >> "$REPO_ROOT/progress.txt" 2>/dev/null || true
+      # (b) Commit the bookkeeping as feat(<STORY_ID>). Stage ONLY the two
+      #     bookkeeping files and commit ONLY if something is actually staged, so
+      #     a self-completing agent never produces an empty / duplicate commit.
+      git -C "$REPO_ROOT" add -- "$PRD_FILE" "$REPO_ROOT/progress.txt" 2>/dev/null || true
+      if ! git -C "$REPO_ROOT" diff --cached --quiet -- "$PRD_FILE" "$REPO_ROOT/progress.txt" 2>/dev/null; then
+        git -C "$REPO_ROOT" commit -m "feat($STORY_ID): ${STORY_TITLE:-complete story} [harness: loop-owned completion on review PASS]" >/dev/null 2>&1 || true
+        echo "  📌 Harness completed $STORY_ID — passes:true, feat() commit, progress logged."
+      fi
+    else
+      echo "  ↪︎  Harness bookkeeping is a no-op — $STORY_ID already passes:true (agent self-completed)."
     fi
   fi
 
