@@ -92,8 +92,8 @@
         "Typecheck, lint, tests pass."
       ],
       "priority": 6,
-      "passes": false,
-      "notes": "DRAFT — FOR CONSIDERATION. This approval gate does not exist today; the pipeline renders straight through."
+      "passes": true,
+      "notes": "COMPLETED — Human-in-the-loop review gate implemented in src/autovideo/review.py. Generates review.md + cut_list_review.csv artifacts, supports CSV override editing, checks for cut_list.approved.json to unblock. Wired into main.py as Stage 4 between classify and assembly. --no-approval flag bypasses the gate. mypy + ruff clean, 10 new tests."
     },
     {
       "id": "US-106",

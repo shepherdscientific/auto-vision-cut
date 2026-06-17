@@ -136,3 +136,17 @@
 - Pipeline updated: transcribe → segment → dedup → classify → assemble → validate
 - Unit tests in tests/test_dedup.py: normalization, similarity, false-start patterns, retake cluster detection, best-take selection, run() integration for false starts, retake clusters, and no-op case
 - 170 tests passing; mypy and ruff clean
+
+## US-105: Human-in-the-Loop Review Gate — COMPLETED
+- Created src/autovideo/review.py with generate_review_md(), export_csv(), and run()
+- Generates review.md (human-readable decision table) + cut_list_review.csv (editable for overrides)
+- Enriches decisions with segment data from segments.json (start, end, text)
+- CSV override flow: user edits cut_list_review.csv, re-run detects it, applies decision changes, recomputes keep ranges and stats
+- Checks for cut_list.approved.json to detect pre-existing approval; returns path immediately if found
+- approval_required=False (--no-approval) bypasses the gate and auto-approves
+- Wired into main.py as Stage 4 between classify and assembly; pipeline now 6 stages
+- Pipeline halts on review gate return None when approval_required=True; re-run with approved file to continue
+- config.py: added approval_required field + --no-approval CLI flag
+- resume.py: added review_done status checking cut_list.approved.json
+- 10 unit tests in tests/test_review.py covering all review gate paths (markdown, CSV export, block/unblock, overrides, enrichment, empty decisions, corrupt segments)
+- 224 tests passing; mypy, ruff, and full pytest suite clean
