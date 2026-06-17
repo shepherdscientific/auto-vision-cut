@@ -100,3 +100,12 @@
 - Outputs transcript.json: segments with {id, start, end, text, confidence, words?}
 - Default model: mlx-community/whisper-tiny; word timestamps enabled by default
 - 8 new unit tests (130 total passing); typecheck (mypy) and lint (ruff) clean
+
+## US-101: Transcript Segmentation into Utterance Units — COMPLETED
+- Created src/autovideo/segment.py with segment_transcript() and helper functions
+- Splits on sentence boundaries + silence gaps (configurable pause_threshold=0.7s default)
+- Merges adjacent segments below pause threshold; splits on large gaps even without sentence boundary
+- Detects and tags dead-air silences between segments
+- Outputs segments.json: {segments:[{id,start,end,text,confidence,duration}], silences:[], stats:{}}
+- Raw segments sorted by start time before processing; output dir auto-created
+- 18 new unit tests (153 total passing); mypy, ruff, pytest all clean
