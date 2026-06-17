@@ -10,8 +10,8 @@
 - US-106: Frame-Accurate Render from Approved Cut List
 - US-107: Auto-Generate Criteria from a Prior Run's Transcript
 - US-108: Learn Criteria from Approved Cut Lists (taste feedback loop)
+- US-109: Optional VLM Vision Analysis as Secondary Signal (transcript-first, feature-flagged, fence-stripping fix, pipeline wiring)
 
 ### Next up
-- US-109: Optional Vision/B-Roll Secondary Signal (priority 10)
 - US-110: Config, Model Routing, and Editorial Tunables (priority 11)
 - US-111: Cut-Decision Eval Harness (precision/recall vs a reference edit) (priority 12)

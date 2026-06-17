@@ -149,7 +149,7 @@
         "Feature-flagged off by default; typecheck, lint, tests pass."
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "DRAFT — FOR CONSIDERATION. Salvages the existing analyze.py investment without letting it drive the edit."
     },
     {
