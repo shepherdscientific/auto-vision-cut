@@ -38,6 +38,7 @@ class Config:
     filler_sensitivity: str = "medium"
     always_keep: list[str] = field(default_factory=list)
     always_cut: list[str] = field(default_factory=list)
+    approval_required: bool = True
 
     _defaults: dict[str, Any] = field(default_factory=dict, repr=False, init=False)
 
@@ -59,6 +60,7 @@ class Config:
             "filler_sensitivity": "medium",
             "always_keep": [],
             "always_cut": [],
+            "approval_required": True,
         }
 
     def resolve_vlm_path(self) -> str:
@@ -143,6 +145,12 @@ class Config:
             default=None,
             help="Seconds between extracted frames (2-5 recommended)",
         )
+        parser.add_argument(
+            "--no-approval",
+            action="store_true",
+            default=None,
+            help="Skip the human review gate and proceed directly to assembly",
+        )
         args = parser.parse_args(argv)
 
         config = cls()
@@ -164,6 +172,8 @@ class Config:
             config.output_mode = args.output_mode
         if args.frame_interval is not None:
             config.frame_interval = args.frame_interval
+        if args.no_approval is True:
+            config.approval_required = False
 
         if overrides:
             config = cls.from_dict({**config.__dict__, **overrides})

@@ -23,20 +23,23 @@ def get_pipeline_stage_status(
     transcript_path = os.path.join(output_dir, "transcript.json")
     segments_path = os.path.join(output_dir, "segments.json")
     cut_list_path = os.path.join(output_dir, "cut_list.json")
+    approved_cut_list_path = os.path.join(output_dir, "cut_list.approved.json")
     output_video_path = os.path.join(output_dir, "output_master.mp4")
 
     status: dict[str, bool] = {
         "transcribe_done": check_artifact(transcript_path),
         "segment_done": check_artifact(segments_path),
         "generate_done": check_artifact(cut_list_path),
+        "review_done": check_artifact(approved_cut_list_path),
         "assemble_done": check_artifact(output_video_path),
     }
 
     logger.info(
-        "Pipeline stage status: transcribe=%s segment=%s generate=%s assemble=%s",
+        "Pipeline stage status: transcribe=%s segment=%s generate=%s review=%s assemble=%s",
         status["transcribe_done"],
         status["segment_done"],
         status["generate_done"],
+        status["review_done"],
         status["assemble_done"],
     )
 
@@ -51,8 +54,10 @@ def resume_from_stage(
 
     if status.get("assemble_done"):
         logger.info("Final output already exists, all stages complete")
-    elif status.get("generate_done"):
+    elif status.get("review_done"):
         logger.info("Resuming from assembly stage")
+    elif status.get("generate_done"):
+        logger.info("Resuming from review gate stage")
     elif status.get("segment_done"):
         logger.info("Resuming from classification stage")
     elif status.get("transcribe_done"):

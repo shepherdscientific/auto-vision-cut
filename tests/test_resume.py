@@ -30,6 +30,7 @@ def test_get_pipeline_stage_status_none_done(tmp_path: Path) -> None:
     assert status["transcribe_done"] is False
     assert status["segment_done"] is False
     assert status["generate_done"] is False
+    assert status["review_done"] is False
     assert status["assemble_done"] is False
 
 
@@ -43,6 +44,7 @@ def test_get_pipeline_stage_status_transcribe_done(tmp_path: Path) -> None:
     assert status["transcribe_done"] is True
     assert status["segment_done"] is False
     assert status["generate_done"] is False
+    assert status["review_done"] is False
     assert status["assemble_done"] is False
 
 
@@ -58,6 +60,24 @@ def test_get_pipeline_stage_status_generate_done(tmp_path: Path) -> None:
     assert status["transcribe_done"] is True
     assert status["segment_done"] is True
     assert status["generate_done"] is True
+    assert status["review_done"] is False
+    assert status["assemble_done"] is False
+
+
+def test_get_pipeline_stage_status_review_done(tmp_path: Path) -> None:
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    (output_dir / "transcript.json").write_text('{"segments": [], "language": "en"}')
+    (output_dir / "segments.json").write_text('{"segments": [], "silences": []}')
+    (output_dir / "cut_list.json").write_text('{"keep": []}')
+    (output_dir / "cut_list.approved.json").write_text('{"keep": []}')
+
+    status = get_pipeline_stage_status(output_dir=str(output_dir))
+
+    assert status["transcribe_done"] is True
+    assert status["segment_done"] is True
+    assert status["generate_done"] is True
+    assert status["review_done"] is True
     assert status["assemble_done"] is False
 
 
@@ -67,6 +87,7 @@ def test_get_pipeline_stage_status_all_done(tmp_path: Path) -> None:
     (output_dir / "transcript.json").write_text('{"segments": [], "language": "en"}')
     (output_dir / "segments.json").write_text('{"segments": [], "silences": []}')
     (output_dir / "cut_list.json").write_text('{"keep": []}')
+    (output_dir / "cut_list.approved.json").write_text('{"keep": []}')
     (output_dir / "output_master.mp4").write_text("fake mp4 content")
 
     status = get_pipeline_stage_status(output_dir=str(output_dir))
@@ -74,6 +95,7 @@ def test_get_pipeline_stage_status_all_done(tmp_path: Path) -> None:
     assert status["transcribe_done"] is True
     assert status["segment_done"] is True
     assert status["generate_done"] is True
+    assert status["review_done"] is True
     assert status["assemble_done"] is True
 
 
@@ -107,6 +129,20 @@ def test_resume_from_stage_detects_generate_done(tmp_path: Path) -> None:
     assert status["transcribe_done"] is True
     assert status["segment_done"] is True
     assert status["generate_done"] is True
+    assert status["review_done"] is False
+    assert status["assemble_done"] is False
+
+
+def test_resume_from_stage_review_done(tmp_path: Path) -> None:
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    (output_dir / "transcript.json").write_text('{"segments": [], "language": "en"}')
+    (output_dir / "segments.json").write_text('{"segments": [], "silences": []}')
+    (output_dir / "cut_list.json").write_text('{"keep": []}')
+    (output_dir / "cut_list.approved.json").write_text('{"keep": []}')
+
+    status = resume_from_stage(output_dir=str(output_dir))
+    assert status["review_done"] is True
     assert status["assemble_done"] is False
 
 
@@ -116,6 +152,7 @@ def test_resume_from_stage_all_complete(tmp_path: Path) -> None:
     (output_dir / "transcript.json").write_text('{"segments": [], "language": "en"}')
     (output_dir / "segments.json").write_text('{"segments": [], "silences": []}')
     (output_dir / "cut_list.json").write_text('{"keep": []}')
+    (output_dir / "cut_list.approved.json").write_text('{"keep": []}')
     (output_dir / "output_master.mp4").write_text("fake mp4 content")
 
     status = resume_from_stage(output_dir=str(output_dir))

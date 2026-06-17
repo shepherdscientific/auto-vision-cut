@@ -116,3 +116,23 @@
 - All AC met: human-editable markdown file with explicit CUT/KEEP rules, strict JSON output contract, runtime tunables, config-driven loading
 - No code changes needed — implemented as part of earlier config/criteria work
 - 160 tests passing; mypy and ruff clean
+
+## US-103: LLM Segment Classifier (the decisioning core) — COMPLETED
+- Created src/autovideo/classify.py with full LLM-based segment classification pipeline
+- Features: criteria prompt injection, supplementary context support, transcript chunking (6000-char default), defensive JSON parsing (strips markdown fences, finds first/last brace boundaries), retry with exponential backoff (3 retries, 2x backoff), per-segment ID validation (deduplicates, rejects hallucinated IDs, defaults missing to keep), and rollback fallback when model unavailable
+- Outputs cut_list.json: {decisions:[{id, decision, reason, confidence, tag}], keep:[{start,end}], stats:{total_kept, total_cut, time_saved_seconds}}
+- Wired into main.py: pipeline now runs transcribe → segment → classify → assemble → validate; removed legacy vision-first stages (extract/analyze/generate)
+- Updated src/autovideo/resume.py and tests/test_resume.py for transcript-first stage artifacts (transcript.json, segments.json, cut_list.json, output_master.mp4)
+- Comprehensive unit tests in tests/test_classify.py covering fence stripping, JSON parsing, prompt building, chunking, segment loading, decision validation, output building, rollback, mocked LLM success/failure/retry paths, and Config integration
+- mypy, ruff, and full pytest suite pass; aider review passed with new pattern appended to AGENTS.md
+
+## US-104: Retake / False-Start Deduplication — COMPLETED
+- Created src/autovideo/dedup.py as a deterministic pre-pass between segmentation and LLM classification
+- Retake detection: difflib.SequenceMatcher on normalized adjacent segment text (threshold 0.75) to find near-duplicate clusters
+- Best-take selection: heuristics prefer longest segment ending with sentence boundary (duration + 2.0 bonus for [.!?…])
+- False-start detection: regex patterns covering "let me start over", "wait, let me rephrase", "actually, let me redo", "scratch that", "no, that wasn't right"
+- Enrichment: adds retake_cluster_id, is_best_take, false_start, dedup_reason metadata to segments.json in-place
+- Integration: classify.py applies _apply_dedup_overrides() after LLM validation to force-cut flagged segments, ensuring deterministic retake handling feeds into cut_list.json
+- Pipeline updated: transcribe → segment → dedup → classify → assemble → validate
+- Unit tests in tests/test_dedup.py: normalization, similarity, false-start patterns, retake cluster detection, best-take selection, run() integration for false starts, retake clusters, and no-op case
+- 170 tests passing; mypy and ruff clean

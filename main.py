@@ -6,8 +6,10 @@ import sys
 from autovideo.assemble import run as assemble_run
 from autovideo.classify import run as classify_run
 from autovideo.config import Config
+from autovideo.dedup import run as dedup_run
 from autovideo.logging_setup import get_module_logger, setup_logging
 from autovideo.resume import get_pipeline_stage_status
+from autovideo.review import run as review_run
 from autovideo.segment import segment_transcript
 from autovideo.transcribe import transcribe
 from autovideo.validate import run as validate_run
@@ -27,6 +29,7 @@ def _run_transcript_pipeline(
     transcript_path = os.path.join(output_dir, "transcript.json")
     segments_path = os.path.join(output_dir, "segments.json")
     cut_list_path = os.path.join(output_dir, "cut_list.json")
+    approved_cut_list_path = os.path.join(output_dir, "cut_list.approved.json")
     output_video_path = os.path.join(output_dir, "output_master.mp4")
 
     if not status.get("transcribe_done"):
@@ -56,9 +59,19 @@ def _run_transcript_pipeline(
         except Exception as exc:
             logger.error("[%s] Segmentation failed: %s", video_label, exc)
             return 1
+
+        logger.info("[%s] === Stage 2b: Retake / False-Start Deduplication ===", video_label)
+        try:
+            dedup_run(
+                segments_path=segments_path,
+                output_dir=output_dir,
+            )
+        except Exception as exc:
+            logger.error("[%s] Deduplication failed: %s", video_label, exc)
+            return 1
     else:
         logger.info(
-            "[%s] Segments exist, skipping segmentation (%s)",
+            "[%s] Segments exist, skipping segmentation + dedup (%s)",
             video_label,
             segments_path,
         )
@@ -81,13 +94,40 @@ def _run_transcript_pipeline(
             cut_list_path,
         )
 
+    if not status.get("review_done"):
+        logger.info("[%s] === Stage 4: Human Review Gate ===", video_label)
+        try:
+            approved = review_run(
+                cut_list_path=cut_list_path,
+                segments_path=segments_path,
+                output_dir=output_dir,
+                approval_required=config.approval_required,
+            )
+            if approved is not None:
+                approved_cut_list_path = approved
+            else:
+                logger.info(
+                    "[%s] Review gate blocked — re-run with approved cut list to continue",
+                    video_label,
+                )
+                return 1
+        except Exception as exc:
+            logger.error("[%s] Review gate failed: %s", video_label, exc)
+            return 1
+    else:
+        logger.info(
+            "[%s] Approved cut list exists, skipping review gate (%s)",
+            video_label,
+            approved_cut_list_path,
+        )
+
     if not status.get("assemble_done"):
-        logger.info("[%s] === Stage 4: Video Assembly ===", video_label)
+        logger.info("[%s] === Stage 5: Video Assembly ===", video_label)
         temp_dir = os.path.join(output_dir, "temp")
         try:
             assemble_run(
                 video_path=video_path,
-                cut_list_path=cut_list_path,
+                cut_list_path=approved_cut_list_path,
                 output_path=output_video_path,
                 temp_dir=temp_dir,
                 cleanup=True,
@@ -102,11 +142,11 @@ def _run_transcript_pipeline(
             output_video_path,
         )
 
-    logger.info("[%s] === Stage 5: Validation ===", video_label)
+    logger.info("[%s] === Stage 6: Validation ===", video_label)
     try:
         validate_run(
             output_path=output_video_path,
-            cut_list_path=cut_list_path,
+            cut_list_path=approved_cut_list_path,
         )
     except Exception as exc:
         logger.error("[%s] Validation failed: %s", video_label, exc)

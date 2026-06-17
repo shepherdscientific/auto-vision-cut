@@ -217,6 +217,35 @@ def _validate_decisions(
     return validated
 
 
+def _apply_dedup_overrides(
+    decisions: list[dict[str, Any]],
+    segments: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Force-cut segments flagged by the dedup pre-pass as retakes or false starts."""
+    seg_map = {s["id"]: s for s in segments}
+    modified: list[dict[str, Any]] = []
+    for d in decisions:
+        seg_id = d["id"]
+        seg = seg_map.get(seg_id, {})
+        if seg.get("false_start"):
+            modified.append({
+                **d,
+                "decision": "cut",
+                "reason": "false_start_detected",
+                "tag": "false_start",
+            })
+        elif seg.get("is_best_take") is False:
+            modified.append({
+                **d,
+                "decision": "cut",
+                "reason": f"retake_inferior_take (cluster {seg.get('retake_cluster_id')})",
+                "tag": "retake",
+            })
+        else:
+            modified.append(d)
+    return modified
+
+
 def rollback_classify(
     segments: list[dict[str, Any]],
 ) -> dict[str, Any]:
@@ -299,6 +328,7 @@ def classify(
         all_decisions.extend(chunk_decisions)
 
     validated = _validate_decisions(all_decisions, expected_ids)
+    validated = _apply_dedup_overrides(validated, sorted_segments)
 
     keeps = [
         {"start": s["start"], "end": s["end"]}

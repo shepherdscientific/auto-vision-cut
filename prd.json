@@ -63,8 +63,8 @@
         "Typecheck, lint, unit tests (mocked LLM) pass."
       ],
       "priority": 4,
-      "passes": false,
-      "notes": "DRAFT — FOR CONSIDERATION. Current generate.py keeps every 'active' frame and merges into one block; all 5 sample runs kept 0->end. Fix the JSON-fence parsing bug the VLM path exposed."
+      "passes": true,
+      "notes": "COMPLETED — Implemented in src/autovideo/classify.py. Includes criteria prompt injection, supplementary context support, transcript chunking (6000-char default), defensive JSON parsing (strips markdown fences, finds first/last brace boundaries), retry with exponential backoff (3 retries, 2x backoff), per-segment ID validation (deduplicates, rejects hallucinated IDs, defaults missing to keep), and rollback fallback when model unavailable. Tests in tests/test_classify.py. main.py and resume.py wired for transcript-first pipeline (transcribe → segment → classify → assemble → validate). mypy + ruff clean."
     },
     {
       "id": "US-104",
@@ -77,8 +77,8 @@
         "Decisions feed back into cut_list.json; unit tests on synthetic retake transcripts pass."
       ],
       "priority": 5,
-      "passes": false,
-      "notes": "DRAFT — FOR CONSIDERATION. Can run as a deterministic pre-pass and/or be folded into the US-103 prompt."
+      "passes": true,
+      "notes": "COMPLETED — Implemented in src/autovideo/dedup.py as a deterministic pre-pass between segmentation and classification. Uses difflib.SequenceMatcher (threshold 0.75) on normalized text to detect adjacent near-duplicate retake clusters. Selects best take via heuristics (duration + sentence-boundary bonus). Detects false starts with regex patterns (e.g., 'let me start over', 'scratch that'). Flags inferior retakes and false starts in segments.json metadata (retake_cluster_id, is_best_take, false_start, dedup_reason). classify.py enforces these as hard overrides after LLM validation so the editorial decision is deterministic and recorded in cut_list.json. 10 unit tests in tests/test_dedup.py. Pipeline updated: transcribe → segment → dedup → classify → assemble → validate. mypy + ruff clean."
     },
     {
       "id": "US-105",
