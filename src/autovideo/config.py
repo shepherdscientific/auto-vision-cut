@@ -51,6 +51,10 @@ class Config:
     classify_chunk_size: int = 6000
     induce_max_tokens: int = 4096
     llm_provider: str = "mlx_lm"
+    llm_base_url: str | None = None
+    classify_model: str = ""
+    induce_model: str = ""
+    transcription_provider: str = "mlx_whisper"
 
     _defaults: dict[str, Any] = field(default_factory=dict, repr=False, init=False)
 
@@ -84,6 +88,10 @@ class Config:
             "classify_chunk_size": 6000,
             "induce_max_tokens": 4096,
             "llm_provider": "mlx_lm",
+            "llm_base_url": None,
+            "classify_model": "",
+            "induce_model": "",
+            "transcription_provider": "mlx_whisper",
         }
 
     def resolve_vlm_path(self) -> str:
@@ -91,6 +99,12 @@ class Config:
 
     def resolve_llm_path(self) -> str:
         return _resolve_model_path(self.llm_model_path)
+
+    def resolve_classify_model(self) -> str:
+        return self.classify_model or self.llm_model_path
+
+    def resolve_induce_model(self) -> str:
+        return self.induce_model or self.llm_model_path
 
     def resolve_whisper_path(self) -> str:
         return _resolve_model_path(self.whisper_model)
@@ -271,6 +285,30 @@ class Config:
             default=None,
             help="LLM backend (mlx_lm or openai-compatible)",
         )
+        parser.add_argument(
+            "--llm-base-url",
+            type=str,
+            default=None,
+            help="Base URL for OpenAI-compatible LLM provider",
+        )
+        parser.add_argument(
+            "--classify-model",
+            type=str,
+            default=None,
+            help="Model override for the classifier (defaults to llm_model_path)",
+        )
+        parser.add_argument(
+            "--induce-model",
+            type=str,
+            default=None,
+            help="Model override for criteria induction (defaults to llm_model_path)",
+        )
+        parser.add_argument(
+            "--transcription-provider",
+            type=str,
+            default=None,
+            help="Transcription backend (mlx_whisper)",
+        )
         args = parser.parse_args(argv)
 
         config = cls()
@@ -324,6 +362,14 @@ class Config:
             config.always_cut = list(args.always_cut)
         if args.llm_provider is not None:
             config.llm_provider = args.llm_provider
+        if args.llm_base_url is not None:
+            config.llm_base_url = args.llm_base_url
+        if args.classify_model is not None:
+            config.classify_model = args.classify_model
+        if args.induce_model is not None:
+            config.induce_model = args.induce_model
+        if args.transcription_provider is not None:
+            config.transcription_provider = args.transcription_provider
 
         if overrides:
             config = cls.from_dict({**config.__dict__, **overrides})

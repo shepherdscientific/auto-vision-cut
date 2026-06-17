@@ -7,13 +7,13 @@ decisions, reasons, and confidence scores.
 import json
 import os
 import re
-import sys
 import time
 from pathlib import Path
 from typing import Any
 
 from autovideo.config import Config
 from autovideo.logging_setup import get_module_logger
+from autovideo.model_router import RouterError, get_provider
 
 
 class ClassifyError(Exception):
@@ -28,10 +28,6 @@ CLASSIFY_MAX_RETRIES = 3
 MAX_TOKENS = 4096
 
 _FENCE_PATTERN = re.compile(r"```(?:json)?\s*\n?(.*?)\n?```", re.DOTALL)
-
-
-def _has_mlx_lm() -> bool:
-    return "mlx_lm" in sys.modules
 
 
 def _load_segments(segments_path: str) -> list[dict[str, Any]]:
@@ -150,61 +146,8 @@ def _chunk_segments(
     return chunks
 
 
-def _call_llm(
-    model: Any,
-    tokenizer: Any,
-    prompt: str,
-    max_tokens: int = MAX_TOKENS,
-) -> str:
-    mlx_lm = sys.modules.get("mlx_lm")
-    if mlx_lm is None:
-        raise ClassifyError("mlx_lm not available for LLM call")
-
-    delay = CLASSIFY_DELAY
-    last_exception: Exception | None = None
-    for attempt in range(CLASSIFY_MAX_RETRIES + 1):
-        try:
-            return mlx_lm.generate(model, tokenizer, prompt, max_tokens=max_tokens)
-        except Exception as exc:
-            last_exception = exc
-            if attempt < CLASSIFY_MAX_RETRIES:
-                logger.warning(
-                    "Classifier LLM attempt %d/%d failed: %s — retrying in %.1fs",
-                    attempt + 1,
-                    CLASSIFY_MAX_RETRIES + 1,
-                    exc,
-                    delay,
-                )
-                time.sleep(delay)
-                delay *= CLASSIFY_BACKOFF
-
-    raise ClassifyError(
-        f"LLM generation failed after {CLASSIFY_MAX_RETRIES + 1} attempts: {last_exception}"
-    ) from last_exception
-
-
-def _load_model(model_path: str) -> tuple[Any, Any] | None:
-    llm_mod = sys.modules.get("mlx_lm")
-    if llm_mod is None:
-        try:
-            import mlx_lm as _mlx  # noqa: F811
-            llm_mod = _mlx
-        except ImportError:
-            return None
-    if llm_mod is None:
-        return None
-
-    try:
-        logger.info("Loading classifier model: %s", model_path)
-        load_result = llm_mod.load(model_path)
-        logger.info("Classifier model loaded")
-        return (load_result[0], load_result[1])
-    except Exception as exc:
-        logger.warning("Failed to load classifier model %s: %s", model_path, exc)
-        return None
-
-
 def _classify_chunk(
+    provider: Any,
     model: Any,
     tokenizer: Any,
     chunk: list[dict[str, Any]],
@@ -213,7 +156,10 @@ def _classify_chunk(
     max_tokens: int = MAX_TOKENS,
 ) -> list[dict[str, Any]]:
     prompt = _build_classify_prompt(chunk, criteria_text, context_text)
-    raw = _call_llm(model, tokenizer, prompt, max_tokens=max_tokens)
+    try:
+        raw = provider.generate(model, tokenizer, prompt, max_tokens=max_tokens)
+    except RouterError as e:
+        raise ClassifyError(str(e)) from e
     parsed = _parse_json_output(raw)
 
     decisions = parsed.get("decisions")
@@ -346,6 +292,8 @@ def classify(
     *,
     max_tokens: int = MAX_TOKENS,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
+    provider_name: str = "mlx_lm",
+    base_url: str | None = None,
 ) -> dict[str, Any]:
     logger.info("Classifier started (segments=%s, model=%s)", segments_path, model_path)
     start_time = time.monotonic()
@@ -367,7 +315,8 @@ def classify(
         logger.info("Merging %d vision events into %d segments", n_events, n_segs)
         sorted_segments = _merge_vision_into_segments(sorted_segments, vision_events)
 
-    model_load = _load_model(model_path)
+    provider = get_provider(provider_name, base_url=base_url)
+    model_load = provider.load(model_path)
     if model_load is None:
         raise ClassifyError(f"Failed to load classifier model: {model_path}")
 
@@ -378,7 +327,9 @@ def classify(
     all_decisions: list[dict[str, Any]] = []
     for i, chunk in enumerate(chunks):
         logger.info("Classifying chunk %d/%d (%d segments)", i + 1, len(chunks), len(chunk))
-        chunk_decisions = _classify_chunk(model, tokenizer, chunk, criteria_text, context_text, max_tokens=max_tokens)
+        chunk_decisions = _classify_chunk(
+            provider, model, tokenizer, chunk, criteria_text, context_text, max_tokens=max_tokens,
+        )
         all_decisions.extend(chunk_decisions)
 
     validated = _validate_decisions(all_decisions, expected_ids)
@@ -416,7 +367,7 @@ def run(
 ) -> dict[str, Any]:
     out = output_dir or config.output_dir
     criteria_text = config.read_criteria()
-    model_path = config.resolve_llm_path()
+    model_path = config.resolve_classify_model()
     context_text = config.read_context_docs() or None
     return classify(
         segments_path=segments_path,
@@ -426,4 +377,6 @@ def run(
         context_text=context_text,
         max_tokens=config.classify_max_tokens,
         chunk_size=config.classify_chunk_size,
+        provider_name=config.llm_provider,
+        base_url=config.llm_base_url,
     )

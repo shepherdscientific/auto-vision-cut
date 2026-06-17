@@ -10,15 +10,14 @@ from autovideo.config import Config
 from autovideo.induce import (
     InduceError,
     _build_induction_input,
-    _call_llm,
     _find_common_fillers,
     _has_mlx_lm,
-    _load_model,
     _load_overrides,
     _strip_fences,
     induce_criteria,
     induce_run,
 )
+from autovideo.model_router import RouterError, _MlxLmProvider
 
 
 def _make_segment(sid: int, start: float, end: float, text: str) -> dict:
@@ -140,58 +139,66 @@ def test_has_mlx_lm_false() -> None:
         assert _has_mlx_lm() is False
 
 
-def test_load_model(tmp_path: Path) -> None:
+def test_mlx_provider_load_succeeds() -> None:
     fake_model = Mock()
     fake_tokenizer = Mock()
     fake_mlx_lm = MagicMock()
     fake_mlx_lm.load.return_value = (fake_model, fake_tokenizer)
     with patch.dict("sys.modules", {"mlx_lm": fake_mlx_lm}):
-        result = _load_model("test-model")
+        provider = _MlxLmProvider()
+        result = provider.load("test-model")
     assert result is not None
     assert result[0] is fake_model
     assert result[1] is fake_tokenizer
 
 
-def test_load_model_none_on_import_error() -> None:
+def test_mlx_provider_load_none_on_import_error() -> None:
     import sys
     mods = {k: v for k, v in sys.modules.items() if k != "mlx_lm"}
     with patch.dict("sys.modules", mods, clear=True):
-        result = _load_model("test-model")
+        provider = _MlxLmProvider()
+        result = provider.load("test-model")
     assert result is None
 
 
-def test_call_llm_succeeds() -> None:
+def test_mlx_provider_generate_succeeds() -> None:
     fake_mlx_lm = MagicMock()
     fake_mlx_lm.generate.return_value = "```md\n# Cut/Keep Criteria\n```"
     with patch.dict("sys.modules", {"mlx_lm": fake_mlx_lm}):
-        result = _call_llm(Mock(), Mock(), "prompt")
+        provider = _MlxLmProvider()
+        result = provider.generate(Mock(), Mock(), "prompt")
     assert "# Cut/Keep Criteria" in result
 
 
-def test_call_llm_retry_then_succeeds() -> None:
+def test_mlx_provider_retry_then_succeeds() -> None:
     fake_mlx_lm = MagicMock()
     fake_mlx_lm.generate.side_effect = [RuntimeError("transient"), "```md\n# Criteria\n```"]
     with patch.dict("sys.modules", {"mlx_lm": fake_mlx_lm}):
-        with patch("autovideo.induce.time.sleep", return_value=None):
-            result = _call_llm(Mock(), Mock(), "prompt")
+        with patch("autovideo.model_router.time.sleep", return_value=None):
+            provider = _MlxLmProvider()
+            result = provider.generate(Mock(), Mock(), "prompt")
     assert "Criteria" in result
     assert fake_mlx_lm.generate.call_count == 2
 
 
-def test_call_llm_exhausts_raises() -> None:
+def test_mlx_provider_exhausts_raises() -> None:
     fake_mlx_lm = MagicMock()
     fake_mlx_lm.generate.side_effect = RuntimeError("persistent")
     with patch.dict("sys.modules", {"mlx_lm": fake_mlx_lm}):
-        with patch("autovideo.induce.time.sleep", return_value=None):
-            with pytest.raises(InduceError, match="LLM generation failed"):
-                _call_llm(Mock(), Mock(), "prompt")
+        with patch("autovideo.model_router.time.sleep", return_value=None):
+            with pytest.raises(RouterError, match="mlx_lm generation failed"):
+                provider = _MlxLmProvider()
+                provider.generate(Mock(), Mock(), "prompt")
     assert fake_mlx_lm.generate.call_count == 4
 
 
-def test_call_llm_no_mlx_lm() -> None:
-    with patch.dict("sys.modules", {"mlx_lm": None}):
-        with pytest.raises(InduceError, match="mlx_lm not available"):
-            _call_llm(Mock(), Mock(), "prompt")
+def test_mlx_provider_no_mlx_lm() -> None:
+    import sys
+    mods = {k: v for k, v in sys.modules.items() if k != "mlx_lm"}
+    with patch.dict("sys.modules", mods, clear=True):
+        with pytest.raises(RouterError, match="mlx_lm not available"):
+            provider = _MlxLmProvider()
+            provider.generate(Mock(), Mock(), "prompt")
 
 
 def test_induce_criteria_writes_output(tmp_path: Path) -> None:

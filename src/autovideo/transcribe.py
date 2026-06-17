@@ -96,6 +96,9 @@ def run(
     output_dir: str,
 ) -> str:
     model_path = config.resolve_whisper_path()
+    provider = config.transcription_provider
+    if provider and provider != "mlx_whisper":
+        logger.warning("Unknown transcription provider %r — falling back to mlx_whisper", provider)
     return transcribe(
         video_path=video_path,
         output_dir=output_dir,

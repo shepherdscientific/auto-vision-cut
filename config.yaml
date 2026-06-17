@@ -1,0 +1,43 @@
+# AutoVisionCut Configuration
+# Copy this file to config.yaml and adjust as needed.
+
+# --- Video Input ---
+video_path: assets/myvideo.mp4
+# video_paths: []          # Uncomment for multiple videos
+output_dir: output
+temp_dir: output/temp
+frame_interval: 3
+output_mode: separate     # "single" or "separate"
+
+# --- Transcription ---
+whisper_model: mlx-community/whisper-tiny
+transcription_provider: mlx_whisper
+pause_threshold: 0.7
+
+# --- LLM Provider ---
+llm_provider: mlx_lm        # "mlx_lm" or "openai" / "openai-compatible"
+llm_base_url: null          # Set for OpenAI-compatible (e.g. https://api.deepseek.com/v1)
+llm_model_path: qwen3.8b
+classify_model: ""          # Override classifier model (defaults to llm_model_path)
+induce_model: ""            # Override induction model (defaults to llm_model_path)
+classify_max_tokens: 4096
+classify_chunk_size: 6000
+induce_max_tokens: 4096
+
+# --- Editorial ---
+criteria_path: criteria/default.md
+aggressiveness: medium      # light | medium | heavy
+filler_sensitivity: medium  # low | medium | high
+always_keep: []
+always_cut: []
+similarity_threshold: 0.75
+approval_required: true
+vision_enabled: false
+
+# --- Criteria Induction ---
+# induce_from_path: output/prior_run
+# criteria_channel: default
+# induce_force: false
+
+# --- VLM ---
+# vlm_model_path: qwen2.5-vl-7b

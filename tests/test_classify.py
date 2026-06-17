@@ -10,7 +10,6 @@ from autovideo.classify import (
     ClassifyError,
     _build_classify_prompt,
     _build_output,
-    _call_llm,
     _chunk_segments,
     _classify_chunk,
     _load_segments,
@@ -24,6 +23,7 @@ from autovideo.classify import (
     run,
 )
 from autovideo.config import Config
+from autovideo.model_router import RouterError, _MlxLmProvider
 
 
 def _make_segment(sid: int, start: float, end: float, text: str) -> dict:
@@ -316,7 +316,7 @@ def test_classify_raises_on_chunk_failure(tmp_path: Path) -> None:
 
     with patch.dict("sys.modules", {"mlx_lm": fake_mlx_lm}):
         with patch("autovideo.classify.time.sleep", return_value=None):
-            with pytest.raises(ClassifyError, match="LLM generation failed"):
+            with pytest.raises(ClassifyError, match="mlx_lm generation failed"):
                 classify(
                     segments_path=str(seg_path),
                     criteria_text="## CUT RULES",
@@ -325,76 +325,71 @@ def test_classify_raises_on_chunk_failure(tmp_path: Path) -> None:
                 )
 
 
-def test_call_llm_succeeds() -> None:
+def test_mlx_provider_generate_succeeds() -> None:
     fake_mlx_lm = MagicMock()
     fake_mlx_lm.generate.return_value = '{"decisions": []}'
     with patch.dict("sys.modules", {"mlx_lm": fake_mlx_lm}):
-        result = _call_llm(Mock(), Mock(), "prompt")
+        provider = _MlxLmProvider()
+        result = provider.generate(Mock(), Mock(), "prompt")
     assert result == '{"decisions": []}'
 
 
-def test_call_llm_retry_then_succeeds() -> None:
+def test_mlx_provider_retry_then_succeeds() -> None:
     fake_mlx_lm = MagicMock()
     fake_mlx_lm.generate.side_effect = [RuntimeError("transient"), '{"decisions": []}']
     with patch.dict("sys.modules", {"mlx_lm": fake_mlx_lm}):
-        with patch("autovideo.classify.time.sleep", return_value=None):
-            result = _call_llm(Mock(), Mock(), "prompt")
+        with patch("autovideo.model_router.time.sleep", return_value=None):
+            provider = _MlxLmProvider()
+            result = provider.generate(Mock(), Mock(), "prompt")
     assert result == '{"decisions": []}'
     assert fake_mlx_lm.generate.call_count == 2
 
 
-def test_call_llm_exhausts_raises() -> None:
+def test_mlx_provider_exhausts_raises() -> None:
     fake_mlx_lm = MagicMock()
     fake_mlx_lm.generate.side_effect = RuntimeError("persistent")
     with patch.dict("sys.modules", {"mlx_lm": fake_mlx_lm}):
-        with patch("autovideo.classify.time.sleep", return_value=None):
-            with pytest.raises(ClassifyError, match="LLM generation failed"):
-                _call_llm(Mock(), Mock(), "prompt")
+        with patch("autovideo.model_router.time.sleep", return_value=None):
+            with pytest.raises(RouterError, match="mlx_lm generation failed"):
+                provider = _MlxLmProvider()
+                provider.generate(Mock(), Mock(), "prompt")
     assert fake_mlx_lm.generate.call_count == 4
 
 
-def test_call_llm_no_mlx_lm() -> None:
-    with patch.dict("sys.modules", {"mlx_lm": None}):
-        with pytest.raises(ClassifyError, match="mlx_lm not available"):
-            _call_llm(Mock(), Mock(), "prompt")
-
-
-def test_call_llm_no_mlx_lm_in_modules() -> None:
+def test_mlx_provider_no_mlx_lm() -> None:
     import sys as _sys
     mods = {k: v for k, v in _sys.modules.items() if k != "mlx_lm"}
     with patch.dict("sys.modules", mods, clear=True):
-        with pytest.raises(ClassifyError, match="mlx_lm not available"):
-            _call_llm(Mock(), Mock(), "prompt")
+        with pytest.raises(RouterError, match="mlx_lm not available"):
+            provider = _MlxLmProvider()
+            provider.generate(Mock(), Mock(), "prompt")
 
 
 def test_classify_chunk_returns_decisions() -> None:
     segments = [_make_segment(0, 0.0, 5.0, "Hello")]
-    fake_mlx_lm = MagicMock()
-    fake_mlx_lm.generate.return_value = json.dumps({
+    provider = MagicMock()
+    provider.generate.return_value = json.dumps({
         "decisions": [{"id": 0, "decision": "keep", "reason": "good",
                        "confidence": 0.9, "tag": "substantive"}],
     })
-    with patch.dict("sys.modules", {"mlx_lm": fake_mlx_lm}):
-        decisions = _classify_chunk(Mock(), Mock(), segments, "## CUT RULES")
+    decisions = _classify_chunk(provider, Mock(), Mock(), segments, "## CUT RULES")
     assert len(decisions) == 1
 
 
 def test_classify_chunk_raises_on_bad_json() -> None:
     segments = [_make_segment(0, 0.0, 5.0, "Hello")]
-    fake_mlx_lm = MagicMock()
-    fake_mlx_lm.generate.return_value = "not json"
-    with patch.dict("sys.modules", {"mlx_lm": fake_mlx_lm}):
-        with pytest.raises(ClassifyError, match="No JSON object found"):
-            _classify_chunk(Mock(), Mock(), segments, "## CUT RULES")
+    provider = MagicMock()
+    provider.generate.return_value = "not json"
+    with pytest.raises(ClassifyError, match="No JSON object found"):
+        _classify_chunk(provider, Mock(), Mock(), segments, "## CUT RULES")
 
 
 def test_classify_chunk_missing_decisions() -> None:
     segments = [_make_segment(0, 0.0, 5.0, "Hello")]
-    fake_mlx_lm = MagicMock()
-    fake_mlx_lm.generate.return_value = json.dumps({"keep": []})
-    with patch.dict("sys.modules", {"mlx_lm": fake_mlx_lm}):
-        with pytest.raises(ClassifyError, match="missing.*decisions"):
-            _classify_chunk(Mock(), Mock(), segments, "## CUT RULES")
+    provider = MagicMock()
+    provider.generate.return_value = json.dumps({"keep": []})
+    with pytest.raises(ClassifyError, match="missing.*decisions"):
+        _classify_chunk(provider, Mock(), Mock(), segments, "## CUT RULES")
 
 
 def test_merge_vision_into_segments_no_vision() -> None:

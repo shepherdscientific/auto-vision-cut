@@ -14,6 +14,7 @@ from typing import Any
 
 from autovideo.config import Config
 from autovideo.logging_setup import get_module_logger
+from autovideo.model_router import RouterError, get_provider
 
 
 class InduceError(Exception):
@@ -250,58 +251,6 @@ def _has_mlx_lm() -> bool:
     return "mlx_lm" in sys.modules
 
 
-def _load_model(model_path: str) -> tuple[Any, Any] | None:
-    llm_mod = sys.modules.get("mlx_lm")
-    if llm_mod is None:
-        try:
-            import mlx_lm as _mlx
-            llm_mod = _mlx
-        except ImportError:
-            return None
-    if llm_mod is None:
-        return None
-    try:
-        logger.info("Loading induction model: %s", model_path)
-        load_result = llm_mod.load(model_path)
-        logger.info("Induction model loaded")
-        return (load_result[0], load_result[1])
-    except Exception as exc:
-        logger.warning(
-            "Failed to load induction model %s: %s", model_path, exc
-        )
-        return None
-
-
-def _call_llm(
-    model: Any,
-    tokenizer: Any,
-    prompt: str,
-    max_tokens: int = MAX_TOKENS,
-) -> str:
-    mlx_lm = sys.modules.get("mlx_lm")
-    if mlx_lm is None:
-        raise InduceError("mlx_lm not available for LLM call")
-
-    delay = INDUCE_DELAY
-    last_exception: Exception | None = None
-    for attempt in range(INDUCE_MAX_RETRIES + 1):
-        try:
-            return mlx_lm.generate(model, tokenizer, prompt, max_tokens=max_tokens)
-        except Exception as exc:
-            last_exception = exc
-            if attempt < INDUCE_MAX_RETRIES:
-                logger.warning(
-                    "Induction LLM attempt %d/%d failed: %s — retrying in %.1fs",
-                    attempt + 1, INDUCE_MAX_RETRIES + 1, exc, delay,
-                )
-                time.sleep(delay)
-                delay *= INDUCE_BACKOFF
-    raise InduceError(
-        f"LLM generation failed after {INDUCE_MAX_RETRIES + 1} "
-        f"attempts: {last_exception}"
-    ) from last_exception
-
-
 def induce_criteria(
     transcript_path: str,
     output_criteria_path: str,
@@ -311,6 +260,8 @@ def induce_criteria(
     overrides_path: str | None = None,
     *,
     max_tokens: int = MAX_TOKENS,
+    provider_name: str = "mlx_lm",
+    base_url: str | None = None,
 ) -> str:
     logger.info(
         "Criteria induction started (transcript=%s, approved=%s, overrides=%s, channel=%s)",
@@ -335,12 +286,16 @@ def induce_criteria(
         "Output ONLY a markdown code block containing the complete criteria file."
     )
 
-    model_load = _load_model(model_path)
+    provider = get_provider(provider_name, base_url=base_url)
+    model_load = provider.load(model_path)
     if model_load is None:
         raise InduceError(f"Failed to load induction model: {model_path}")
 
     model, tokenizer = model_load
-    raw = _call_llm(model, tokenizer, prompt, max_tokens=max_tokens)
+    try:
+        raw = provider.generate(model, tokenizer, prompt, max_tokens=max_tokens)
+    except RouterError as e:
+        raise InduceError(str(e)) from e
     criteria_content = _strip_fences(raw)
 
     if not criteria_content:
@@ -400,7 +355,7 @@ def induce_run(
     if approved_to_use and not os.path.isfile(approved_to_use):
         approved_to_use = None
 
-    model_path = config.resolve_llm_path()
+    model_path = config.resolve_induce_model()
 
     overrides_to_use: str | None = None
     if os.path.isdir(induce_from):
@@ -416,4 +371,6 @@ def induce_run(
         channel_name=channel,
         overrides_path=overrides_to_use,
         max_tokens=config.induce_max_tokens,
+        provider_name=config.llm_provider,
+        base_url=config.llm_base_url,
     )

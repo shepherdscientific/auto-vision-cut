@@ -8,7 +8,6 @@ import logging
 import os
 import sys
 import time
-from typing import cast
 
 from autovideo.analyze import run as analyze_run
 from autovideo.assemble import run as assemble_run
