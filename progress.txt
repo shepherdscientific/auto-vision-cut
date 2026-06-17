@@ -109,3 +109,10 @@
 - Outputs segments.json: {segments:[{id,start,end,text,confidence,duration}], silences:[], stats:{}}
 - Raw segments sorted by start time before processing; output dir auto-created
 - 18 new unit tests (153 total passing); mypy, ruff, pytest all clean
+
+## US-102: Base Cut/Keep Criteria Prompt (editable default) — COMPLETED
+- criteria/default.md already existed with full CUT/KEEP rules, JSON output contract, and runtime tunable placeholders
+- Config already had criteria_path, aggressiveness, filler_sensitivity, always_keep/always_cut fields with read_criteria()
+- All AC met: human-editable markdown file with explicit CUT/KEEP rules, strict JSON output contract, runtime tunables, config-driven loading
+- No code changes needed — implemented as part of earlier config/criteria work
+- 160 tests passing; mypy and ruff clean

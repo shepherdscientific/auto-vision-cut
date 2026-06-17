@@ -47,7 +47,7 @@
         "Criteria file is loaded by the classifier (US-103) and is human-editable without code changes."
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "DRAFT — FOR CONSIDERATION. Replaces the dead DEFAULT_LLM_PROMPT in generate.py, which is prototyping-oriented ('tool use vs idle') and is never invoked because main.py hardcodes use_llm=False."
     },
     {
