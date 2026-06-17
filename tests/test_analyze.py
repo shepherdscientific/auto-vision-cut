@@ -4,7 +4,49 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
-from autovideo.analyze import _generate_frame, _resolve_frames, run
+from autovideo.analyze import _generate_frame, _resolve_frames, _strip_fences, run
+
+
+def test_strip_fences_no_fences() -> None:
+    assert _strip_fences('{"active": true}') == '{"active": true}'
+
+
+def test_strip_fences_json_fence() -> None:
+    raw = '```json\n{"active": false}\n```'
+    assert _strip_fences(raw) == '{"active": false}'
+
+
+def test_strip_fences_plain_fence() -> None:
+    raw = '```\n{"active": true}\n```'
+    assert _strip_fences(raw) == '{"active": true}'
+
+
+def test_strip_fences_with_prose() -> None:
+    raw = "Here is the analysis:\n\n```json\n{\"active\": false}\n```"
+    assert _strip_fences(raw) == '{"active": false}'
+
+
+def test_run_strips_fences(tmp_path: Path) -> None:
+    frame = tmp_path / "000003.jpg"
+    frame.write_text("")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    fake_result = FakeGenerationResult(
+        '```json\n{"active": false, "description": "idle screen"}\n```'
+    )
+
+    with patch("autovideo.analyze.load", return_value=(MagicMock(), MagicMock())):
+        with patch("autovideo.analyze.generate", return_value=fake_result):
+            events = run(
+                frames=[frame],
+                model_path="test-model",
+                output_dir=str(output_dir),
+            )
+
+    assert len(events) == 1
+    assert events[0]["active"] is False
+    assert events[0]["description"] == "idle screen"
 
 
 def test_resolve_frames_from_directory(tmp_path: Path) -> None:
@@ -109,7 +151,7 @@ def test_run_handles_non_json_output(tmp_path: Path) -> None:
             )
 
     assert len(events) == 1
-    assert events[0]["active"] is True
+    assert events[0]["active"] is None
     assert events[0]["description"] == "The user appears to be coding"
 
 
@@ -245,6 +287,6 @@ def test_run_handles_generate_errors_with_error_records(tmp_path: Path) -> None:
 
     assert len(events) == 2
     assert events[0]["error"] == "GPU OOM for frame 3"
-    assert events[0]["active"] is True
+    assert events[0]["active"] is None
     assert events[1]["active"] is False
     assert events[1]["description"] == "idle"

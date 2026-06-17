@@ -14,6 +14,8 @@ from autovideo.classify import (
     _chunk_segments,
     _classify_chunk,
     _load_segments,
+    _load_vision_log,
+    _merge_vision_into_segments,
     _parse_json_output,
     _strip_fences,
     _validate_decisions,
@@ -393,6 +395,110 @@ def test_classify_chunk_missing_decisions() -> None:
     with patch.dict("sys.modules", {"mlx_lm": fake_mlx_lm}):
         with pytest.raises(ClassifyError, match="missing.*decisions"):
             _classify_chunk(Mock(), Mock(), segments, "## CUT RULES")
+
+
+def test_merge_vision_into_segments_no_vision() -> None:
+    segments = [_make_segment(0, 0.0, 5.0, "Hello")]
+    result = _merge_vision_into_segments(segments, [])
+    assert len(result) == 1
+    assert "vision_active" not in result[0]
+
+
+def test_merge_vision_into_segments_adds_active(tmp_path: Path) -> None:
+    segments = [_make_segment(0, 0.0, 10.0, "Hello world")]
+    vision_events = [
+        {"timestamp": 2, "active": True, "description": "typing code", "frame": "000002.jpg"},
+        {"timestamp": 5, "active": False, "description": "staring", "frame": "000005.jpg"},
+        {"timestamp": 7, "active": True, "description": "scrolling", "frame": "000007.jpg"},
+    ]
+    result = _merge_vision_into_segments(segments, vision_events)
+    assert result[0]["vision_active"] is True
+    assert len(result[0]["vision_descriptions"]) == 3
+
+
+def test_merge_vision_into_segments_inactive_majority() -> None:
+    segments = [_make_segment(0, 0.0, 10.0, "Hello world")]
+    vision_events = [
+        {"timestamp": 2, "active": False, "description": "staring", "frame": "000002.jpg"},
+        {"timestamp": 5, "active": False, "description": "idle", "frame": "000005.jpg"},
+        {"timestamp": 7, "active": True, "description": "typing", "frame": "000007.jpg"},
+    ]
+    result = _merge_vision_into_segments(segments, vision_events)
+    assert result[0]["vision_active"] is False
+
+
+def test_merge_vision_into_segments_no_coverage() -> None:
+    segments = [_make_segment(0, 10.0, 20.0, "Hello world")]
+    vision_events = [
+        {"timestamp": 2, "active": False, "description": "idle", "frame": "000002.jpg"},
+    ]
+    result = _merge_vision_into_segments(segments, vision_events)
+    assert result[0]["vision_active"] is None
+    assert result[0]["vision_descriptions"] == []
+
+
+def test_load_vision_log_exists(tmp_path: Path) -> None:
+    events = [{"timestamp": 0, "active": True, "description": "coding", "frame": "000000.jpg"}]
+    path = tmp_path / "vision_log.json"
+    path.write_text(json.dumps(events))
+    result = _load_vision_log(str(tmp_path))
+    assert len(result) == 1
+    assert result[0]["active"] is True
+
+
+def test_load_vision_log_not_exists(tmp_path: Path) -> None:
+    result = _load_vision_log(str(tmp_path))
+    assert result == []
+
+
+def test_load_vision_log_invalid_json(tmp_path: Path) -> None:
+    path = tmp_path / "vision_log.json"
+    path.write_text("not json")
+    result = _load_vision_log(str(tmp_path))
+    assert result == []
+
+
+def test_vision_integration_in_classify(tmp_path: Path) -> None:
+    segments = [_make_segment(0, 0.0, 5.0, "Hello"), _make_segment(1, 5.0, 10.0, "World")]
+    seg_path = tmp_path / "segments.json"
+    seg_path.write_text(json.dumps({"segments": segments}))
+
+    output_dir = str(tmp_path / "output")
+
+    vision_events = [
+        {"timestamp": 2, "active": True, "description": "coding", "frame": "000002.jpg"},
+        {"timestamp": 7, "active": False, "description": "idle", "frame": "000007.jpg"},
+    ]
+    vision_path = Path(output_dir) / "vision_log.json"
+    vision_path.parent.mkdir(parents=True, exist_ok=True)
+    vision_path.write_text(json.dumps(vision_events))
+
+    fake_model = Mock()
+    fake_tokenizer = Mock()
+    fake_llm_output = json.dumps({
+        "decisions": [
+            {"id": 0, "decision": "keep", "reason": "substantive",
+             "confidence": 0.95, "tag": "substantive"},
+            {"id": 1, "decision": "cut", "reason": "filler",
+             "confidence": 0.8, "tag": "filler"},
+        ],
+        "keep": [{"start": 0.0, "end": 5.0}],
+        "stats": {"total_kept": 1, "total_cut": 1, "time_saved_seconds": 5.0},
+    })
+    fake_mlx_lm = MagicMock()
+    fake_mlx_lm.load.return_value = (fake_model, fake_tokenizer)
+    fake_mlx_lm.generate.return_value = fake_llm_output
+
+    with patch.dict("sys.modules", {"mlx_lm": fake_mlx_lm}):
+        result = classify(
+            segments_path=str(seg_path),
+            criteria_text="## CUT RULES",
+            model_path="test-model",
+            output_dir=output_dir,
+        )
+
+    assert result["stats"]["total_segments"] == 2
+    assert result["stats"]["total_kept"] == 1
 
 
 def test_run_with_config(tmp_path: Path) -> None:

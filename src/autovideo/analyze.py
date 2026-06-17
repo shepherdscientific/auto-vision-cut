@@ -2,6 +2,7 @@
 
 import gc
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any, Union
@@ -11,6 +12,8 @@ from mlx_vlm import generate, load
 
 from autovideo.logging_setup import get_module_logger
 from autovideo.retry import retry_with_backoff
+
+_FENCE_PATTERN = re.compile(r"```(?:json)?\s*\n?(.*?)\n?```", re.DOTALL)
 
 logger = get_module_logger(__name__)
 
@@ -57,6 +60,11 @@ def _resolve_frames(frames_input: Union[list[Path], str]) -> list[Path]:
             raise ValueError(f"Frames directory not found: {frames_input}")
         return sorted(frames_dir.glob("*.jpg"))
     return sorted(frames_input)
+
+
+def _strip_fences(raw: str) -> str:
+    match = _FENCE_PATTERN.search(raw)
+    return match.group(1).strip() if match else raw.strip()
 
 
 def _build_frame_prompt(
@@ -126,9 +134,10 @@ def run(
                 )
 
                 raw_text = result.text.strip()
+                cleaned = _strip_fences(raw_text)
 
                 try:
-                    parsed = json.loads(raw_text)
+                    parsed = json.loads(cleaned)
                     if "timestamp" not in parsed:
                         parsed["timestamp"] = timestamp_seconds
                     parsed["frame"] = frame_path.name
@@ -143,7 +152,7 @@ def run(
                             "timestamp": timestamp_seconds,
                             "frame": frame_path.name,
                             "description": raw_text,
-                            "active": True,
+                            "active": None,
                         }
                     )
             except Exception as exc:
@@ -153,7 +162,7 @@ def run(
                         "timestamp": int(frame_path.stem),
                         "frame": frame_path.name,
                         "description": f"ERROR: {exc}",
-                        "active": True,
+                        "active": None,
                         "error": str(exc),
                     }
                 )

@@ -42,6 +42,7 @@ class Config:
     induce_from_path: str | None = None
     criteria_channel: str = "default"
     induce_force: bool = False
+    vision_enabled: bool = False
 
     _defaults: dict[str, Any] = field(default_factory=dict, repr=False, init=False)
 
@@ -67,6 +68,7 @@ class Config:
             "induce_from_path": None,
             "criteria_channel": "default",
             "induce_force": False,
+            "vision_enabled": False,
         }
 
     def resolve_vlm_path(self) -> str:
@@ -175,6 +177,12 @@ class Config:
             default=None,
             help="Regenerate criteria even if the file already exists",
         )
+        parser.add_argument(
+            "--enable-vision",
+            action="store_true",
+            default=None,
+            help="Enable optional VLM vision analysis as secondary signal for low-speech segments",
+        )
         args = parser.parse_args(argv)
 
         config = cls()
@@ -204,6 +212,8 @@ class Config:
             config.criteria_channel = args.criteria_channel
         if args.induce_force is True:
             config.induce_force = True
+        if args.enable_vision is True:
+            config.vision_enabled = True
 
         if overrides:
             config = cls.from_dict({**config.__dict__, **overrides})

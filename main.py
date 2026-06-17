@@ -3,10 +3,12 @@
 import os
 import sys
 
+from autovideo.analyze import run as analyze_run
 from autovideo.assemble import run as assemble_run
 from autovideo.classify import run as classify_run
 from autovideo.config import Config
 from autovideo.dedup import run as dedup_run
+from autovideo.extract import run as extract_run
 from autovideo.induce import induce_run
 from autovideo.logging_setup import get_module_logger, setup_logging
 from autovideo.resume import get_pipeline_stage_status
@@ -76,6 +78,38 @@ def _run_transcript_pipeline(
             video_label,
             segments_path,
         )
+
+    if config.vision_enabled:
+        logger.info("[%s] === Stage 2d: Optional VLM Vision Analysis ===", video_label)
+        try:
+            frames_dir = os.path.join(output_dir, "temp", "frames")
+            if os.path.isdir(frames_dir):
+                frame_list = sorted(os.listdir(frames_dir))
+                if frame_list:
+                    frames_path = frames_dir
+                else:
+                    logger.info(
+                        "[%s] No frames found, extracting at frame_interval=%ds",
+                        video_label, config.frame_interval,
+                    )
+                    extract_run(video_path, config.frame_interval, output_dir)
+                    frames_path = os.path.join(output_dir, "temp", "frames")
+            else:
+                extract_run(video_path, config.frame_interval, output_dir)
+                frames_path = os.path.join(output_dir, "temp", "frames")
+
+            analyze_run(
+                frames=frames_path,
+                model_path=config.resolve_vlm_path(),
+                batch_size=4,
+                output_dir=output_dir,
+                context_text=config.read_context_docs() or None,
+            )
+        except Exception as exc:
+            logger.warning(
+                "[%s] Vision analysis failed, continuing without vision signal: %s",
+                video_label, exc,
+            )
 
     if config.induce_from_path:
         logger.info("[%s] === Stage 2c: Criteria Induction ===", video_label)

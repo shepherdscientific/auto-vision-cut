@@ -5,6 +5,7 @@ criteria prompt and produces a labelled cut_list.json with per-segment
 decisions, reasons, and confidence scores.
 """
 import json
+import os
 import re
 import sys
 import time
@@ -59,6 +60,45 @@ def _parse_json_output(raw: str) -> dict[str, Any]:
         return json.loads(cleaned[first_brace : last_brace + 1])
     except json.JSONDecodeError as exc:
         raise ClassifyError(f"Failed to parse LLM JSON output: {exc}") from exc
+
+
+def _load_vision_log(output_dir: str) -> list[dict[str, Any]]:
+    vision_path = os.path.join(output_dir, "vision_log.json")
+    if not os.path.isfile(vision_path):
+        return []
+    try:
+        with open(vision_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, list) else []
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def _merge_vision_into_segments(
+    segments: list[dict[str, Any]],
+    vision_events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not vision_events:
+        return segments
+
+    merged: list[dict[str, Any]] = []
+    for seg in segments:
+        seg_start = seg.get("start", 0.0)
+        seg_end = seg.get("end", 0.0)
+        coverage = [e for e in vision_events if seg_start <= e.get("timestamp", 0) <= seg_end]
+        active_count = sum(1 for e in coverage if e.get("active") is True)
+        inactive_count = sum(1 for e in coverage if e.get("active") is False)
+        descriptions = [e.get("description", "") for e in coverage if e.get("active") is not None]
+
+        has_vision = (active_count + inactive_count) > 0
+        if has_vision:
+            seg["vision_active"] = active_count >= inactive_count
+        else:
+            seg["vision_active"] = None
+        seg["vision_descriptions"] = descriptions
+        merged.append(seg)
+
+    return merged
 
 
 def _build_classify_prompt(
@@ -312,6 +352,13 @@ def classify(
 
     sorted_segments = sorted(segments, key=lambda s: s.get("start", 0.0))
     expected_ids = {s["id"] for s in sorted_segments}
+
+    vision_events = _load_vision_log(output_dir)
+    if vision_events:
+        n_events = len(vision_events)
+        n_segs = len(sorted_segments)
+        logger.info("Merging %d vision events into %d segments", n_events, n_segs)
+        sorted_segments = _merge_vision_into_segments(sorted_segments, vision_events)
 
     model_load = _load_model(model_path)
     if model_load is None:

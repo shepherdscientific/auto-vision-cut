@@ -26,18 +26,23 @@ def get_pipeline_stage_status(
     approved_cut_list_path = os.path.join(output_dir, "cut_list.approved.json")
     output_video_path = os.path.join(output_dir, "output_master.mp4")
 
+    vision_log_path = os.path.join(output_dir, "vision_log.json")
+
     status: dict[str, bool] = {
         "transcribe_done": check_artifact(transcript_path),
         "segment_done": check_artifact(segments_path),
+        "vision_done": check_artifact(vision_log_path),
         "generate_done": check_artifact(cut_list_path),
         "review_done": check_artifact(approved_cut_list_path),
         "assemble_done": check_artifact(output_video_path),
     }
 
     logger.info(
-        "Pipeline stage status: transcribe=%s segment=%s generate=%s review=%s assemble=%s",
+        "Pipeline stage status: transcribe=%s segment=%s vision=%s "
+        "generate=%s review=%s assemble=%s",
         status["transcribe_done"],
         status["segment_done"],
+        status["vision_done"],
         status["generate_done"],
         status["review_done"],
         status["assemble_done"],

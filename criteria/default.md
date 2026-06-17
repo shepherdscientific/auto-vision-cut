@@ -24,6 +24,19 @@ For each segment, decide whether it should be **KEPT** in the final edit or **CU
 - Demos / walkthroughs: step-by-step demonstrations
 - Concise transitions: brief segues between topics
 
+## Vision Signal (secondary — only for low-speech segments)
+
+Each segment may include an optional `vision_active` and `vision_descriptions` field from
+a screen-content analysis. This is a **secondary signal only** — transcript content
+always takes priority.
+- If `vision_active` is `true`, the screen showed active tool use during the segment:
+  this supports a **keep** decision (even if the speech is sparse).
+- If `vision_active` is `false`, the screen showed idle/staring time:
+  this supports a **cut** decision for segments with little transcript content.
+- If `vision_active` is `null`, no vision data is available for this segment — ignore it.
+- **When transcript content is substantive, decide on the transcript alone regardless
+  of vision data.**
+
 ## JSON Output Contract
 
 You MUST output a single JSON object with EXACTLY this structure — no markdown fences, no prose before/after:
