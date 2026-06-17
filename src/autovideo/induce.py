@@ -309,6 +309,8 @@ def induce_criteria(
     approved_path: str | None = None,
     channel_name: str = "custom",
     overrides_path: str | None = None,
+    *,
+    max_tokens: int = MAX_TOKENS,
 ) -> str:
     logger.info(
         "Criteria induction started (transcript=%s, approved=%s, overrides=%s, channel=%s)",
@@ -338,7 +340,7 @@ def induce_criteria(
         raise InduceError(f"Failed to load induction model: {model_path}")
 
     model, tokenizer = model_load
-    raw = _call_llm(model, tokenizer, prompt)
+    raw = _call_llm(model, tokenizer, prompt, max_tokens=max_tokens)
     criteria_content = _strip_fences(raw)
 
     if not criteria_content:
@@ -355,6 +357,14 @@ def induce_criteria(
     )
 
     return str(output_path)
+
+
+def induce_criteria_from_config(
+    config: Config,
+    transcript_path: str,
+    approved_path: str | None = None,
+) -> str | None:
+    return induce_run(config, transcript_path, approved_path)
 
 
 def induce_run(
@@ -405,4 +415,5 @@ def induce_run(
         approved_path=approved_to_use,
         channel_name=channel,
         overrides_path=overrides_to_use,
+        max_tokens=config.induce_max_tokens,
     )

@@ -12,6 +12,7 @@ from pathlib import Path
 import mlx_whisper
 
 from autovideo.audio import extract_audio
+from autovideo.config import Config
 from autovideo.logging_setup import get_module_logger
 
 logger = get_module_logger(__name__)
@@ -87,3 +88,17 @@ def transcribe(
         len(transcript["segments"]), output_path, elapsed,
     )
     return output_path
+
+
+def run(
+    config: Config,
+    video_path: str,
+    output_dir: str,
+) -> str:
+    model_path = config.resolve_whisper_path()
+    return transcribe(
+        video_path=video_path,
+        output_dir=output_dir,
+        model_path=model_path,
+        word_timestamps=True,
+    )

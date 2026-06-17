@@ -125,8 +125,11 @@ def _build_classify_prompt(
     return "\n\n".join(parts)
 
 
+DEFAULT_CHUNK_SIZE = 6000
+
+
 def _chunk_segments(
-    segments: list[dict[str, Any]], max_chars: int = 6000
+    segments: list[dict[str, Any]], max_chars: int = DEFAULT_CHUNK_SIZE
 ) -> list[list[dict[str, Any]]]:
     chunks: list[list[dict[str, Any]]] = []
     current: list[dict[str, Any]] = []
@@ -207,9 +210,10 @@ def _classify_chunk(
     chunk: list[dict[str, Any]],
     criteria_text: str,
     context_text: str | None = None,
+    max_tokens: int = MAX_TOKENS,
 ) -> list[dict[str, Any]]:
     prompt = _build_classify_prompt(chunk, criteria_text, context_text)
-    raw = _call_llm(model, tokenizer, prompt)
+    raw = _call_llm(model, tokenizer, prompt, max_tokens=max_tokens)
     parsed = _parse_json_output(raw)
 
     decisions = parsed.get("decisions")
@@ -339,6 +343,9 @@ def classify(
     model_path: str,
     output_dir: str = "output",
     context_text: str | None = None,
+    *,
+    max_tokens: int = MAX_TOKENS,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
 ) -> dict[str, Any]:
     logger.info("Classifier started (segments=%s, model=%s)", segments_path, model_path)
     start_time = time.monotonic()
@@ -365,13 +372,13 @@ def classify(
         raise ClassifyError(f"Failed to load classifier model: {model_path}")
 
     model, tokenizer = model_load
-    chunks = _chunk_segments(sorted_segments)
+    chunks = _chunk_segments(sorted_segments, max_chars=chunk_size)
     logger.info("Split %d segments into %d chunk(s)", len(sorted_segments), len(chunks))
 
     all_decisions: list[dict[str, Any]] = []
     for i, chunk in enumerate(chunks):
         logger.info("Classifying chunk %d/%d (%d segments)", i + 1, len(chunks), len(chunk))
-        chunk_decisions = _classify_chunk(model, tokenizer, chunk, criteria_text, context_text)
+        chunk_decisions = _classify_chunk(model, tokenizer, chunk, criteria_text, context_text, max_tokens=max_tokens)
         all_decisions.extend(chunk_decisions)
 
     validated = _validate_decisions(all_decisions, expected_ids)
@@ -411,11 +418,12 @@ def run(
     criteria_text = config.read_criteria()
     model_path = config.resolve_llm_path()
     context_text = config.read_context_docs() or None
-
     return classify(
         segments_path=segments_path,
         criteria_text=criteria_text,
         model_path=model_path,
         output_dir=out,
         context_text=context_text,
+        max_tokens=config.classify_max_tokens,
+        chunk_size=config.classify_chunk_size,
     )

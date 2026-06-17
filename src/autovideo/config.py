@@ -44,6 +44,14 @@ class Config:
     induce_force: bool = False
     vision_enabled: bool = False
 
+    whisper_model: str = "mlx-community/whisper-tiny"
+    pause_threshold: float = 0.7
+    similarity_threshold: float = 0.75
+    classify_max_tokens: int = 4096
+    classify_chunk_size: int = 6000
+    induce_max_tokens: int = 4096
+    llm_provider: str = "mlx_lm"
+
     _defaults: dict[str, Any] = field(default_factory=dict, repr=False, init=False)
 
     def __post_init__(self) -> None:
@@ -69,6 +77,13 @@ class Config:
             "criteria_channel": "default",
             "induce_force": False,
             "vision_enabled": False,
+            "whisper_model": "mlx-community/whisper-tiny",
+            "pause_threshold": 0.7,
+            "similarity_threshold": 0.75,
+            "classify_max_tokens": 4096,
+            "classify_chunk_size": 6000,
+            "induce_max_tokens": 4096,
+            "llm_provider": "mlx_lm",
         }
 
     def resolve_vlm_path(self) -> str:
@@ -76,6 +91,9 @@ class Config:
 
     def resolve_llm_path(self) -> str:
         return _resolve_model_path(self.llm_model_path)
+
+    def resolve_whisper_path(self) -> str:
+        return _resolve_model_path(self.whisper_model)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Config":
@@ -183,6 +201,76 @@ class Config:
             default=None,
             help="Enable optional VLM vision analysis as secondary signal for low-speech segments",
         )
+        parser.add_argument(
+            "--whisper-model",
+            type=str,
+            default=None,
+            help="Whisper model name or path for transcription",
+        )
+        parser.add_argument(
+            "--pause-threshold",
+            type=float,
+            default=None,
+            help="Silence gap threshold in seconds for segment boundary detection",
+        )
+        parser.add_argument(
+            "--similarity-threshold",
+            type=float,
+            default=None,
+            help="Text similarity threshold (0.0-1.0) for retake detection",
+        )
+        parser.add_argument(
+            "--classify-max-tokens",
+            type=int,
+            default=None,
+            help="Max tokens for LLM classifier output",
+        )
+        parser.add_argument(
+            "--classify-chunk-size",
+            type=int,
+            default=None,
+            help="Max characters per chunk when classifying long transcripts",
+        )
+        parser.add_argument(
+            "--induce-max-tokens",
+            type=int,
+            default=None,
+            help="Max tokens for criteria induction LLM output",
+        )
+        parser.add_argument(
+            "--aggressiveness",
+            type=str,
+            default=None,
+            choices=["light", "medium", "heavy"],
+            help="Editorial aggressiveness for cut/keep decisions",
+        )
+        parser.add_argument(
+            "--filler-sensitivity",
+            type=str,
+            default=None,
+            choices=["low", "medium", "high"],
+            help="Sensitivity for filler word detection",
+        )
+        parser.add_argument(
+            "--always-keep",
+            type=str,
+            nargs="*",
+            default=None,
+            help="Text patterns to always keep",
+        )
+        parser.add_argument(
+            "--always-cut",
+            type=str,
+            nargs="*",
+            default=None,
+            help="Text patterns to always cut",
+        )
+        parser.add_argument(
+            "--llm-provider",
+            type=str,
+            default=None,
+            help="LLM backend (mlx_lm or openai-compatible)",
+        )
         args = parser.parse_args(argv)
 
         config = cls()
@@ -214,6 +302,28 @@ class Config:
             config.induce_force = True
         if args.enable_vision is True:
             config.vision_enabled = True
+        if args.whisper_model is not None:
+            config.whisper_model = args.whisper_model
+        if args.pause_threshold is not None:
+            config.pause_threshold = args.pause_threshold
+        if args.similarity_threshold is not None:
+            config.similarity_threshold = args.similarity_threshold
+        if args.classify_max_tokens is not None:
+            config.classify_max_tokens = args.classify_max_tokens
+        if args.classify_chunk_size is not None:
+            config.classify_chunk_size = args.classify_chunk_size
+        if args.induce_max_tokens is not None:
+            config.induce_max_tokens = args.induce_max_tokens
+        if args.aggressiveness is not None:
+            config.aggressiveness = args.aggressiveness
+        if args.filler_sensitivity is not None:
+            config.filler_sensitivity = args.filler_sensitivity
+        if args.always_keep is not None:
+            config.always_keep = list(args.always_keep)
+        if args.always_cut is not None:
+            config.always_cut = list(args.always_cut)
+        if args.llm_provider is not None:
+            config.llm_provider = args.llm_provider
 
         if overrides:
             config = cls.from_dict({**config.__dict__, **overrides})

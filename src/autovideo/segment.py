@@ -9,6 +9,7 @@ import os
 import re
 import time
 
+from autovideo.config import Config
 from autovideo.logging_setup import get_module_logger
 
 logger = get_module_logger(__name__)
@@ -134,3 +135,15 @@ def _write_segments(
         seg_count, sil_count, output_path, elapsed,
     )
     return output_path
+
+
+def run(
+    config: Config,
+    transcript_path: str,
+    output_dir: str,
+) -> str:
+    return segment_transcript(
+        transcript_path=transcript_path,
+        output_dir=output_dir,
+        pause_threshold=config.pause_threshold,
+    )

@@ -10,6 +10,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
+from autovideo.config import Config
 from autovideo.logging_setup import get_module_logger
 
 logger = get_module_logger(__name__)
@@ -155,3 +156,15 @@ def run(
     logger.info("Dedup complete: flagged %d segment(s) for cutting", total_flagged)
 
     return str(output_path)
+
+
+def run_from_config(
+    config: Config,
+    segments_path: str,
+    output_dir: str = "output",
+) -> str:
+    return run(
+        segments_path=segments_path,
+        output_dir=output_dir,
+        similarity_threshold=config.similarity_threshold,
+    )

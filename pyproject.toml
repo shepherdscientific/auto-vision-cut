@@ -14,6 +14,9 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
+[project.scripts]
+autovideo = "autovideo.main:main"
+
 [project.optional-dependencies]
 dev = [
     "mypy>=1.8.0",

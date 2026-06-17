@@ -28,9 +28,12 @@ def get_pipeline_stage_status(
 
     vision_log_path = os.path.join(output_dir, "vision_log.json")
 
+    deduped_path = os.path.join(output_dir, "segments.json")
+
     status: dict[str, bool] = {
         "transcribe_done": check_artifact(transcript_path),
         "segment_done": check_artifact(segments_path),
+        "dedup_done": check_artifact(deduped_path),
         "vision_done": check_artifact(vision_log_path),
         "generate_done": check_artifact(cut_list_path),
         "review_done": check_artifact(approved_cut_list_path),
@@ -38,10 +41,11 @@ def get_pipeline_stage_status(
     }
 
     logger.info(
-        "Pipeline stage status: transcribe=%s segment=%s vision=%s "
+        "Pipeline stage status: transcribe=%s segment=%s dedup=%s vision=%s "
         "generate=%s review=%s assemble=%s",
         status["transcribe_done"],
         status["segment_done"],
+        status["dedup_done"],
         status["vision_done"],
         status["generate_done"],
         status["review_done"],
@@ -63,8 +67,10 @@ def resume_from_stage(
         logger.info("Resuming from assembly stage")
     elif status.get("generate_done"):
         logger.info("Resuming from review gate stage")
-    elif status.get("segment_done"):
+    elif status.get("dedup_done"):
         logger.info("Resuming from classification stage")
+    elif status.get("segment_done"):
+        logger.info("Resuming from dedup stage")
     elif status.get("transcribe_done"):
         logger.info("Resuming from segmentation stage")
     else:
