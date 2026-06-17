@@ -18,7 +18,7 @@
         "Typecheck and lint pass; unit test on a short fixture clip."
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "DRAFT — FOR CONSIDERATION. This is the new 'text extraction' the redesign depends on. No transcription exists in the current repo (grep confirms zero whisper/speech/transcript code)."
     },
     {

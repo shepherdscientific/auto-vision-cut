@@ -93,3 +93,10 @@
 - Resume support: skips completed stages when intermediate artifacts (vision_log.json, cut_list.json, output_master.mp4) exist
 - Error handling: each stage returns exit code 1 on failure with descriptive log message
 - 3 new integration tests (122 total passing); typecheck (mypy) and lint (ruff) pass
+
+## US-100: Audio Extraction + Local Transcription — COMPLETED
+- Created src/autovideo/transcribe.py with _build_segment() and transcribe()
+- Uses mlx-whisper for local Apple Silicon transcription; reuses audio.py extract_audio()
+- Outputs transcript.json: segments with {id, start, end, text, confidence, words?}
+- Default model: mlx-community/whisper-tiny; word timestamps enabled by default
+- 8 new unit tests (130 total passing); typecheck (mypy) and lint (ruff) clean
