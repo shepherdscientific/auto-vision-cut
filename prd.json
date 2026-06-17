@@ -1,172 +1,184 @@
 {
-  "project": "AutoVisionCut",
-  "branchName": "ralph/auto-vision-pipeline",
-  "description": "Local Vision-to-Script-to-Cut pipeline for processing raw OBS prototyping footage.",
+  "project": "AutoVisionCut — Transcript-First Cut/Keep Redesign",
+  "branchName": "ralph/redesign",
+  "description": "Transcript-first redesign of the cut/keep decisioning, staged for the ralph loop (stories are passes:false so the loop picks them up in priority order). Re-centers the pipeline on the cut/keep decisioning gap: transcript-first editorial decisions driven by an explicit, editable base cut/keep prompt, with an option to auto-generate the criteria from a prior run's transcript, and a human-in-the-loop review gate before render. Vision/VLM is demoted to an optional secondary signal. Reuses the existing ralph/opencode loop, deepseek/kimi/local model routing, and ffmpeg/MoviePy render.",
   "agents": [
     "engineering-backend-architect"
   ],
   "userStories": [
     {
-      "id": "US-000",
-      "title": "Project Scaffolding",
-      "description": "As the automation loop, I need a working Python project structure so all subsequent stories can install and import dependencies.",
+      "id": "US-100",
+      "title": "Audio Extraction + Local Transcription (timestamped transcript)",
+      "description": "As the editor, I need a timestamped transcript of the footage so cut/keep decisions can be made from what is actually said, not from screenshot pixels.",
       "acceptanceCriteria": [
-        "Create project directory structure: src/autovideo/ (package), assets/, output/, tests/",
-        "Generate requirements.txt with ffmpeg-python, moviepy, mlx, mlx-vlm, numpy, Pillow, tqdm, pyyaml, pytest",
-        "Create pyproject.toml with project metadata and dev dependencies (mypy, pytest, ruff)",
-        "Create a .venv/ virtualenv and verify pip install -r requirements.txt succeeds",
-        "Typecheck and lint passes."
-      ],
-      "priority": 0,
-      "passes": true,
-      "notes": ""
-    },
-    {
-      "id": "US-001",
-      "title": "Configuration Module",
-      "description": "As the automation loop, I need a unified configuration system so all pipeline stages share consistent parameters.",
-      "acceptanceCriteria": [
-        "Create src/autovideo/config.py with a dataclass or Pydantic model holding: frame_interval (2–5s), model paths, input/output dirs, VLM/LLM model names, temp dir",
-        "Support loading config from YAML/JSON file with sensible defaults",
-        "Support CLI overrides via argparse (--video, --config, --output-dir)",
-        "Typecheck and lint passes."
+        "Extract the audio track from the source video with ffmpeg (reuse audio.py extract_audio).",
+        "Transcribe locally on Apple Silicon (mlx-whisper preferred; faster-whisper / whisper.cpp acceptable) with word-level and segment-level timestamps.",
+        "Write transcript.json: array of {id, start, end, text, words:[{w,start,end}], confidence}.",
+        "Runs fully offline; model auto-resolved like the existing MLX models.",
+        "Typecheck and lint pass; unit test on a short fixture clip."
       ],
       "priority": 1,
-      "passes": true,
-      "notes": ""
+      "passes": false,
+      "notes": "DRAFT — FOR CONSIDERATION. This is the new 'text extraction' the redesign depends on. No transcription exists in the current repo (grep confirms zero whisper/speech/transcript code)."
     },
     {
-      "id": "US-002",
-      "title": "Logging Infrastructure",
-      "description": "As the automation loop, I need structured logging so pipeline failures are diagnosable across long-running jobs.",
+      "id": "US-101",
+      "title": "Transcript Segmentation into Utterance Units",
+      "description": "As the editor, I need the transcript split into clean utterance segments so keep/cut operates on whole thoughts, never mid-sentence.",
       "acceptanceCriteria": [
-        "Configure Python logging with file and console handlers in src/autovideo/logging_setup.py",
-        "Log timestamps, module name, log level, and message",
-        "Each pipeline module (extract, analyze, generate, assemble) logs its start, progress, and completion",
-        "Typecheck and lint passes."
+        "Segment the transcript on sentence boundaries and silence/pause gaps (configurable pause threshold).",
+        "Each segment carries a stable id, start, end, text, and duration.",
+        "Detect and tag long silences / dead-air gaps between segments.",
+        "Write segments.json; segments preserve chronological order.",
+        "Typecheck, lint, unit tests pass."
       ],
       "priority": 2,
-      "passes": true,
-      "notes": ""
+      "passes": false,
+      "notes": "DRAFT — FOR CONSIDERATION."
     },
     {
-      "id": "US-003",
-      "title": "Frame Extraction Module",
-      "description": "As the automation loop, I need to extract frames from OBS output so the vision model can analyze them.",
+      "id": "US-102",
+      "title": "Base Cut/Keep Criteria Prompt (editable default)",
+      "description": "As a creator, I want a concrete default editorial spec telling the tool what to cut vs keep, stored as an editable, version-controlled file.",
       "acceptanceCriteria": [
-        "Use ffmpeg to extract 1 frame every 2 to 5 seconds from the target video file, configurable via config module",
-        "Save extracted frames temporarily to a structured local directory (frames/<timestamp>.jpg)",
-        "Log extraction progress (frame count, elapsed time)",
-        "Typecheck and lint passes."
+        "Ship criteria/default.md: a base cut/keep prompt with explicit CUT rules (filler, dead air, false starts, retakes, tangents, interruptions, redundancy) and KEEP rules (substantive explanations, best take of a repeated line, hooks, CTAs, punchlines, demos, concise transitions).",
+        "Prompt defines a strict JSON output contract: per-segment {id, decision, reason, confidence, tag}.",
+        "Expose runtime tunables: aggressiveness (light|medium|heavy), filler_sensitivity (low|medium|high), always_keep[], always_cut[].",
+        "Criteria file is loaded by the classifier (US-103) and is human-editable without code changes."
       ],
       "priority": 3,
-      "passes": true,
-      "notes": ""
+      "passes": false,
+      "notes": "DRAFT — FOR CONSIDERATION. Replaces the dead DEFAULT_LLM_PROMPT in generate.py, which is prototyping-oriented ('tool use vs idle') and is never invoked because main.py hardcodes use_llm=False."
     },
     {
-      "id": "US-004",
-      "title": "Local Vision Analysis",
-      "description": "As the automation loop, I need to pass frames to a local VLM to generate a chronological event log.",
-      "agents": [
-        "engineering-backend-architect"
-      ],
+      "id": "US-103",
+      "title": "LLM Segment Classifier (the decisioning core)",
+      "description": "As the editor, I want an LLM to read the timestamped segments under the criteria prompt and label each segment keep or cut with a reason and confidence.",
       "acceptanceCriteria": [
-        "Load local VLM (e.g., Qwen-VL or LLaVA) using MLX to optimize for unified memory.",
-        "Analyze each frame to generate a timestamped JSON log describing the physical action.",
-        "Ensure memory is cleared between batches to maintain stability within system limits."
+        "Feed segments.json + the active criteria prompt to the LLM; chunk long transcripts to fit context and stitch results by segment id.",
+        "Output cut_list.json: {decisions:[{id, decision, reason, confidence, tag}], keep:[{start,end}], stats}.",
+        "Validate every input segment id appears exactly once in decisions; default unmatched to keep.",
+        "Robust JSON parsing (strip code fences / prose) with a safe fallback that keeps everything and flags low confidence.",
+        "Route to deepseek/kimi/local via existing config; retries with backoff.",
+        "Typecheck, lint, unit tests (mocked LLM) pass."
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Implemented VLM-based frame analysis using mlx_vlm. Batch processing with memory cleanup. Error-tolerant per-frame processing. 9 new tests."
+      "passes": false,
+      "notes": "DRAFT — FOR CONSIDERATION. Current generate.py keeps every 'active' frame and merges into one block; all 5 sample runs kept 0->end. Fix the JSON-fence parsing bug the VLM path exposed."
     },
     {
-      "id": "US-005",
-      "title": "Script and Cut-List Generation",
-      "description": "As a creator, I want the LLM to identify narrative arcs and generate a cut-list from the vision logs.",
-      "agents": [
-        "engineering-backend-architect"
-      ],
+      "id": "US-104",
+      "title": "Retake / False-Start Deduplication",
+      "description": "As a creator, when I deliver the same line several times I want only the best take kept.",
       "acceptanceCriteria": [
-        "Pass the vision JSON log and project reference documents to the local Qwen3 model.",
-        "Model outputs a JSON object containing 'keep' timestamp ranges and a drafted voiceover script.",
-        "Logic explicitly filters out 'dead time' (e.g., staring, no active prototyping)."
+        "Detect near-duplicate adjacent segments (normalized text similarity) as retake clusters.",
+        "Keep one take per cluster (prefer the last clean, most complete take; cut the rest) with rationale recorded.",
+        "Detect false starts ('let me start over', abrupt self-corrections) and cut the aborted attempt.",
+        "Decisions feed back into cut_list.json; unit tests on synthetic retake transcripts pass."
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Implemented cut-list generation with LLM (Qwen3 via mlx_lm) and deterministic fallback. Loads vision_log.json, filters inactive frames, groups into keep ranges, generates voiceover script. 17 tests."
+      "passes": false,
+      "notes": "DRAFT — FOR CONSIDERATION. Can run as a deterministic pre-pass and/or be folded into the US-103 prompt."
     },
     {
-      "id": "US-006",
-      "title": "Automated Assembly",
-      "description": "As a creator, I want the system to automatically slice the original OBS file using the generated cut-list.",
-      "agents": [
-        "engineering-backend-architect"
-      ],
+      "id": "US-105",
+      "title": "Human-in-the-Loop Review Gate (approve before render)",
+      "description": "As a creator, I want to review and edit the proposed cut list before anything is rendered.",
       "acceptanceCriteria": [
-        "Parse the 'keep' timestamps using MoviePy.",
-        "Concatenate the subclips into a single master output file.",
-        "Clean up temporary extracted frames and temporary files after a successful render."
+        "Emit a human-readable review.md (and/or editable cut_list.json): each segment with timestamp, text, decision, reason, confidence, and running 'time saved'.",
+        "Support a standard EDL/CSV export so cuts can be inspected or imported into a real editor.",
+        "Render (US-106) consumes only an APPROVED cut list; without approval it stops at review.",
+        "User decision overrides are captured and persisted (for US-108).",
+        "Typecheck, lint, tests pass."
       ],
       "priority": 6,
-      "passes": true,
-      "notes": ""
+      "passes": false,
+      "notes": "DRAFT — FOR CONSIDERATION. This approval gate does not exist today; the pipeline renders straight through."
     },
     {
-      "id": "US-007",
-      "title": "Audio Extraction and Processing",
-      "description": "As a creator, I need the pipeline to extract and preserve the audio track from OBS footage for use in the final output.",
+      "id": "US-106",
+      "title": "Frame-Accurate Render from Approved Cut List",
+      "description": "As a creator, I want the approved keeps assembled into a clean master with synchronized audio.",
       "acceptanceCriteria": [
-        "Extract audio track from the source OBS video using ffmpeg",
-        "Integrate audio into the MoviePy assembly so final output has synchronized audio",
-        "Support optional voiceover overlay (from US-005 script) mixed with original audio",
-        "Typecheck and lint passes."
+        "Build keep ranges from the approved cut list and render via ffmpeg concat (frame-accurate, re-encode for clean joins); MoviePy path retained as fallback.",
+        "Preserve original audio in sync; optional voiceover mix retained from audio.py.",
+        "Validate output exists, non-zero duration, and segment count matches approved keeps (reuse validate.py).",
+        "Typecheck, lint, integration test on synthetic clip pass."
       ],
       "priority": 7,
-      "passes": true,
-      "notes": ""
+      "passes": false,
+      "notes": "DRAFT — FOR CONSIDERATION. Reuses assemble.py/validate.py; prefers ffmpeg concat over MoviePy for speed/robustness."
     },
     {
-      "id": "US-008",
-      "title": "Output Validation and Verification",
-      "description": "As a creator, I want automated checks that the final rendered video is complete and correct before considering the pipeline finished.",
+      "id": "US-107",
+      "title": "Auto-Generate Criteria from a Prior Run's Transcript",
+      "description": "As a creator, I want the tool to draft a reusable cut/keep criteria prompt by studying a previous video's transcript, so the editor matches my style.",
       "acceptanceCriteria": [
-        "Verify output_master.mp4 exists and has non-zero duration",
-        "Assert the number of concatenated segments matches the cut_list.json keep ranges",
-        "Log output file size, duration, and codec info for human audit",
-        "Typecheck and lint passes."
+        "Given a prior transcript.json (and optionally its approved cut_list.json), run an LLM 'criteria induction' pass.",
+        "Derive: topic/structure, the creator's actual recurring filler words, pacing/tightness, reliably-kept vs reliably-cut content, signature/recurring segments.",
+        "Emit criteria/<channel>.md in the same shape as the base prompt: concrete always_keep/always_cut lists, real filler words, recommended aggressiveness, and 2-4 few-shot examples drawn from the prior transcript.",
+        "Output is human-editable and becomes the active criteria for future runs; cold-start falls back to criteria/default.md.",
+        "Typecheck, lint, unit tests (mocked LLM) pass."
       ],
       "priority": 8,
-      "passes": true,
-      "notes": ""
+      "passes": false,
+      "notes": "DRAFT — FOR CONSIDERATION. This is the 'generate the prompt itself from extracted text on a previous run' capability the user asked for."
     },
     {
-      "id": "US-009",
-      "title": "Testing Setup and Smoke Tests",
-      "description": "As a developer, I need a test harness and smoke tests to catch regressions across the pipeline.",
+      "id": "US-108",
+      "title": "Learn Criteria from Approved Cut Lists (taste feedback loop)",
+      "description": "As a creator, I want my review edits to make future auto-criteria better.",
       "acceptanceCriteria": [
-        "Create pytest configuration in pyproject.toml (or pytest.ini)",
-        "Add a smoke test fixture: a 10-second synthetic test video generated by ffmpeg",
-        "Write an integration test that runs the full pipeline on the synthetic video and asserts output_master.mp4 is produced",
-        "Write unit tests for Config loading, frame extraction timestamps, and cut_list JSON parsing",
-        "Typecheck and lint passes."
+        "Persist human keep/cut overrides (segment text + final decision) from US-105 as labeled examples.",
+        "Criteria induction (US-107) incorporates these as few-shot examples / adjusted rules.",
+        "Measurable: re-running the classifier on a held-out prior video moves decisions toward the human's labels.",
+        "Typecheck, lint, tests pass."
       ],
       "priority": 9,
-      "passes": true,
-      "notes": "Enhanced pytest config with markers. Created conftest.py with session-scoped synthetic video fixture. Added 5 extract unit tests and 6 integration/smoke tests covering full pipeline end-to-end."
+      "passes": false,
+      "notes": "DRAFT — FOR CONSIDERATION. Optional but closes the loop; each approved review sharpens the next run."
     },
     {
-      "id": "US-010",
-      "title": "Error Recovery and Retry Logic",
-      "description": "As the automation loop, I need the pipeline to handle partial failures gracefully so long runs are not lost.",
+      "id": "US-109",
+      "title": "Optional Vision/B-Roll Secondary Signal",
+      "description": "As a creator, for stretches with little or no speech I still want sensible keep/cut using the screen content.",
       "acceptanceCriteria": [
-        "Wrap VLM and LLM inference calls with retry logic (exponential backoff, max 3 retries)",
-        "On ffmpeg failure, log the error and skip the corrupted segment rather than aborting the entire run",
-        "Support resuming from the last successful stage by checking for existing intermediate artifacts",
-        "Typecheck and lint passes."
+        "For low-speech segments, optionally run the existing VLM pass and merge a vision signal (active/interesting vs idle) into the per-segment decision.",
+        "Vision is strictly secondary; transcript decisions win when both exist.",
+        "Fix the VLM JSON-fence parsing so vision_log entries are real booleans, not raw markdown defaulted to active=true.",
+        "Feature-flagged off by default; typecheck, lint, tests pass."
       ],
       "priority": 10,
-      "passes": true,
-      "notes": ""
+      "passes": false,
+      "notes": "DRAFT — FOR CONSIDERATION. Salvages the existing analyze.py investment without letting it drive the edit."
+    },
+    {
+      "id": "US-110",
+      "title": "Config, Model Routing, and Editorial Tunables",
+      "description": "As the automation loop, I need config wiring for the new stages and the cut/keep tunables.",
+      "acceptanceCriteria": [
+        "Extend Config with: transcription model, classifier model + provider (deepseek/kimi/local), criteria file path, aggressiveness, filler_sensitivity, always_keep/always_cut.",
+        "Reuse ralph.sh local<->remote failover and opencode provider blocks; no secrets in repo.",
+        "CLI + YAML/JSON overrides consistent with existing config.py patterns.",
+        "Typecheck, lint, unit tests pass."
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": "DRAFT — FOR CONSIDERATION."
+    },
+    {
+      "id": "US-111",
+      "title": "Cut-Decision Eval Harness (precision/recall vs a reference edit)",
+      "description": "As a developer, I need to measure whether the editor's cut/keep decisions are actually good, not just that the pipeline runs.",
+      "acceptanceCriteria": [
+        "Provide a labeled fixture: a transcript with ground-truth keep/cut labels (a real reference edit).",
+        "Compute precision/recall/F1 of cut decisions and report time-removed vs reference.",
+        "Add golden transcript fixtures and a regression test asserting metrics stay above a threshold.",
+        "Typecheck, lint, tests pass."
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": "DRAFT — FOR CONSIDERATION. The current 122 tests prove plumbing works but never test decision quality — which is the part that is broken."
     }
   ]
 }
