@@ -135,7 +135,7 @@
         "Typecheck, lint, tests pass."
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "DRAFT — FOR CONSIDERATION. Optional but closes the loop; each approved review sharpens the next run."
     },
     {
